@@ -1,0 +1,66 @@
+{
+  "name": "mina-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript / JavaScript SDK for interacting with Mina Protocol nodes via GraphQL",
+  "license": "Apache-2.0",
+  "author": "O(1) Labs <build@o1labs.org>",
+  "homepage": "https://github.com/MinaProtocol/mina-sdk-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MinaProtocol/mina-sdk-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MinaProtocol/mina-sdk-js/issues"
+  },
+  "keywords": [
+    "mina",
+    "mina-protocol",
+    "blockchain",
+    "graphql",
+    "sdk"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist coverage",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "lint": "eslint src tests examples",
+    "format": "prettier --write src tests examples",
+    "format:check": "prettier --check src tests examples",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitest/coverage-v8": "^1.4.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}
