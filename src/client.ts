@@ -187,9 +187,7 @@ export class MinaClient {
 
   async getAccount(publicKey: string, tokenId?: string): Promise<AccountData> {
     const query = tokenId ? QUERY_ACCOUNT_WITH_TOKEN : QUERY_ACCOUNT;
-    const variables: Variables = tokenId
-      ? { publicKey, token: tokenId }
-      : { publicKey };
+    const variables: Variables = tokenId ? { publicKey, token: tokenId } : { publicKey };
     const data = await this.executeQuery<{
       account: {
         publicKey: string;
@@ -218,8 +216,7 @@ export class MinaClient {
   }
 
   async getBestChain(maxLength?: number): Promise<BlockInfo[]> {
-    const variables: Variables | undefined =
-      maxLength && maxLength > 0 ? { maxLength } : undefined;
+    const variables: Variables | undefined = maxLength && maxLength > 0 ? { maxLength } : undefined;
     const data = await this.executeQuery<{
       bestChain: Array<{
         stateHash: string;

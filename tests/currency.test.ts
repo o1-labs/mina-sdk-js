@@ -48,9 +48,7 @@ describe('Currency', () => {
   });
 
   it('throws on subtraction underflow', () => {
-    expect(() => Currency.fromMina(1).sub(Currency.fromMina(2))).toThrow(
-      CurrencyUnderflowError,
-    );
+    expect(() => Currency.fromMina(1).sub(Currency.fromMina(2))).toThrow(CurrencyUnderflowError);
   });
 
   it('rejects negative multipliers', () => {
