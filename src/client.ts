@@ -9,23 +9,35 @@ import {
   QUERY_ACCOUNT,
   QUERY_ACCOUNT_WITH_TOKEN,
   QUERY_BEST_CHAIN,
+  QUERY_BLOCK,
   QUERY_DAEMON_STATUS,
+  QUERY_GENESIS_CONSTANTS,
   QUERY_NETWORK_ID,
   QUERY_PEERS,
   QUERY_POOLED_USER_COMMANDS,
   QUERY_POOLED_USER_COMMANDS_ALL,
   QUERY_SYNC_STATUS,
+  QUERY_TRACKED_ACCOUNTS,
+  QUERY_TRANSACTION_STATUS,
 } from './queries.js';
 import type {
   AccountData,
+  Block,
+  BlockArgs,
   BlockInfo,
+  BlockTransaction,
   DaemonStatus,
+  FeeTransfer,
+  GenesisConstants,
   PeerInfo,
   PooledUserCommand,
   SendDelegationParams,
   SendDelegationResult,
   SendPaymentParams,
   SendPaymentResult,
+  TrackedAccount,
+  TransactionStatus,
+  TransactionStatusArgs,
 } from './types.js';
 
 export const DEFAULT_GRAPHQL_URI = 'http://127.0.0.1:3085/graphql';
@@ -289,9 +301,12 @@ export class MinaClient {
     if (params.memo) input.memo = params.memo;
     if (params.nonce !== undefined) input.nonce = String(params.nonce);
 
+    // The mutation declares $signature, so callers that want daemon-side
+    // signing must pass an explicit null — omitting the variable triggers
+    // the daemon's "Missing variable `signature`" error.
     const data = await this.executeQuery<{
       sendPayment: { payment: { id: string; hash: string; nonce: string | number } };
-    }>(MUTATION_SEND_PAYMENT, { input }, 'send_payment');
+    }>(MUTATION_SEND_PAYMENT, { input, signature: params.signature ?? null }, 'send_payment');
     const p = data.sendPayment.payment;
     return { id: p.id, hash: p.hash, nonce: Number(p.nonce) };
   }
@@ -307,7 +322,7 @@ export class MinaClient {
 
     const data = await this.executeQuery<{
       sendDelegation: { delegation: { id: string; hash: string; nonce: string | number } };
-    }>(MUTATION_SEND_DELEGATION, { input }, 'send_delegation');
+    }>(MUTATION_SEND_DELEGATION, { input, signature: params.signature ?? null }, 'send_delegation');
     const d = data.sendDelegation.delegation;
     return { id: d.id, hash: d.hash, nonce: Number(d.nonce) };
   }
@@ -327,6 +342,146 @@ export class MinaClient {
       'set_snark_work_fee',
     );
     return data.setSnarkWorkFee.lastFee;
+  }
+
+  /**
+   * Fetch a block by state hash or height. Pass exactly one — the daemon's
+   * resolver rejects calls with both or neither.
+   */
+  async getBlock(args: BlockArgs): Promise<Block> {
+    const hasHash = args.stateHash !== undefined;
+    const hasHeight = args.height !== undefined;
+    if (hasHash === hasHeight) {
+      throw new RangeError('getBlock: pass exactly one of stateHash or height');
+    }
+    const variables: Variables = {
+      stateHash: args.stateHash ?? null,
+      height: args.height ?? null,
+    };
+    const data = await this.executeQuery<{
+      block: {
+        stateHash: string;
+        protocolState: {
+          previousStateHash: string;
+          consensusState: {
+            blockHeight: string | number;
+            epoch: string | number;
+            slot: string | number;
+            slotSinceGenesis: string | number;
+            blockCreator: string;
+          };
+          blockchainState: {
+            date: string;
+            utcDate: string;
+            snarkedLedgerHash: string;
+            stagedLedgerHash: string;
+          };
+        };
+        transactions: {
+          coinbase: string;
+          coinbaseReceiverAccount: { publicKey: string } | null;
+          feeTransfer: Array<{ recipient: string; fee: string; type: string }>;
+          userCommands: Array<{
+            id: string;
+            hash: string;
+            kind: string;
+            nonce: string | number;
+            source: { publicKey: string };
+            receiver: { publicKey: string };
+            amount: string;
+            fee: string;
+            memo: string;
+            failureReason: string | null;
+          }>;
+        };
+      } | null;
+    }>(QUERY_BLOCK, variables, 'get_block');
+
+    if (!data.block) {
+      throw new Error(
+        `block not found (stateHash=${args.stateHash ?? 'null'}, height=${args.height ?? 'null'})`,
+      );
+    }
+    const b = data.block;
+    const cs = b.protocolState.consensusState;
+    const bs = b.protocolState.blockchainState;
+    const tx = b.transactions;
+    const userCommands: BlockTransaction[] = tx.userCommands.map((c) => ({
+      id: c.id,
+      hash: c.hash,
+      kind: c.kind,
+      nonce: String(c.nonce),
+      source: c.source.publicKey,
+      receiver: c.receiver.publicKey,
+      amount: c.amount,
+      fee: c.fee,
+      memo: c.memo,
+      failureReason: c.failureReason,
+    }));
+    const feeTransfers: FeeTransfer[] = tx.feeTransfer.map((f) => ({
+      recipient: f.recipient,
+      fee: f.fee,
+      type: f.type,
+    }));
+    return {
+      stateHash: b.stateHash,
+      previousStateHash: b.protocolState.previousStateHash,
+      blockHeight: Number(cs.blockHeight),
+      epoch: Number(cs.epoch),
+      slot: Number(cs.slot),
+      slotSinceGenesis: Number(cs.slotSinceGenesis),
+      blockCreator: cs.blockCreator,
+      date: bs.date,
+      utcDate: bs.utcDate,
+      snarkedLedgerHash: bs.snarkedLedgerHash,
+      stagedLedgerHash: bs.stagedLedgerHash,
+      coinbase: tx.coinbase,
+      coinbaseReceiver: tx.coinbaseReceiverAccount?.publicKey ?? null,
+      feeTransfers,
+      userCommands,
+    };
+  }
+
+  /**
+   * Look up the daemon-reported status of a previously-submitted transaction.
+   * Pass exactly one of `payment` or `zkappTransaction`.
+   */
+  async getTransactionStatus(args: TransactionStatusArgs): Promise<TransactionStatus> {
+    const hasPayment = args.payment !== undefined;
+    const hasZkapp = args.zkappTransaction !== undefined;
+    if (hasPayment === hasZkapp) {
+      throw new RangeError('getTransactionStatus: pass exactly one of payment or zkappTransaction');
+    }
+    const data = await this.executeQuery<{ transactionStatus: TransactionStatus }>(
+      QUERY_TRANSACTION_STATUS,
+      { payment: args.payment ?? null, zkappTransaction: args.zkappTransaction ?? null },
+      'get_transaction_status',
+    );
+    return data.transactionStatus;
+  }
+
+  async getGenesisConstants(): Promise<GenesisConstants> {
+    const data = await this.executeQuery<{ genesisConstants: GenesisConstants }>(
+      QUERY_GENESIS_CONSTANTS,
+      undefined,
+      'get_genesis_constants',
+    );
+    return data.genesisConstants;
+  }
+
+  /**
+   * Returns the public keys (and total balances) the daemon is tracking.
+   * Lightnet / tutorial setups normally expose hundreds; public daemons
+   * (devnet/mainnet) typically return an empty list.
+   */
+  async getTrackedAccounts(): Promise<TrackedAccount[]> {
+    const data = await this.executeQuery<{
+      trackedAccounts: Array<{ publicKey: string; balance: { total: string } }> | null;
+    }>(QUERY_TRACKED_ACCOUNTS, undefined, 'get_tracked_accounts');
+    return (data.trackedAccounts ?? []).map((a) => ({
+      publicKey: a.publicKey,
+      balance: a.balance.total,
+    }));
   }
 }
 
