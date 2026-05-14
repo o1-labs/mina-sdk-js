@@ -119,9 +119,17 @@ query {
 }
 `;
 
+// $signature is optional. When omitted the daemon signs with its own wallet
+// keys (tutorial / lightnet). When provided, the daemon verifies the supplied
+// signature and submits — the path public daemons (devnet/mainnet) need
+// because they don't hold user keys.
+//
+// CAUTION: the variable is declared, so when callers don't want client-side
+// signing they must pass `signature: null` explicitly. Omitting the variable
+// triggers the daemon's "Missing variable `signature`" error.
 export const MUTATION_SEND_PAYMENT = `
-mutation ($input: SendPaymentInput!) {
-  sendPayment(input: $input) {
+mutation ($input: SendPaymentInput!, $signature: SignatureInput) {
+  sendPayment(input: $input, signature: $signature) {
     payment {
       id
       hash
@@ -132,8 +140,8 @@ mutation ($input: SendPaymentInput!) {
 `;
 
 export const MUTATION_SEND_DELEGATION = `
-mutation ($input: SendDelegationInput!) {
-  sendDelegation(input: $input) {
+mutation ($input: SendDelegationInput!, $signature: SignatureInput) {
+  sendDelegation(input: $input, signature: $signature) {
     delegation {
       id
       hash
@@ -155,6 +163,76 @@ export const MUTATION_SET_SNARK_WORK_FEE = `
 mutation ($fee: UInt64!) {
   setSnarkWorkFee(input: { fee: $fee }) {
     lastFee
+  }
+}
+`;
+
+// The daemon's block resolver enforces "exactly one of stateHash / height".
+// Callers must pass exactly one; passing both or neither errors at the daemon.
+export const QUERY_BLOCK = `
+query ($stateHash: String, $height: Int) {
+  block(stateHash: $stateHash, height: $height) {
+    stateHash
+    protocolState {
+      previousStateHash
+      consensusState {
+        blockHeight
+        epoch
+        slot
+        slotSinceGenesis
+        blockCreator
+      }
+      blockchainState {
+        date
+        utcDate
+        snarkedLedgerHash
+        stagedLedgerHash
+      }
+    }
+    transactions {
+      coinbase
+      coinbaseReceiverAccount { publicKey }
+      feeTransfer { recipient fee type }
+      userCommands {
+        id hash kind nonce
+        source { publicKey }
+        receiver { publicKey }
+        amount fee memo
+        failureReason
+      }
+    }
+  }
+}
+`;
+
+// Pass at most one of $payment / $zkappTransaction. Both are nullable; the
+// daemon's resolver rejects the request if neither is set.
+export const QUERY_TRANSACTION_STATUS = `
+query ($payment: ID, $zkappTransaction: ID) {
+  transactionStatus(payment: $payment, zkappTransaction: $zkappTransaction)
+}
+`;
+
+export const QUERY_GENESIS_CONSTANTS = `
+query {
+  genesisConstants {
+    genesisTimestamp
+    coinbase
+    accountCreationFee
+  }
+}
+`;
+
+// trackedAccounts surfaces the public keys the daemon is tracking
+// (lightnet/tutorial setups normally expose hundreds; public daemons usually
+// return an empty list).
+export const QUERY_TRACKED_ACCOUNTS = `
+query {
+  trackedAccounts {
+    publicKey
+    balance {
+      total
+    }
   }
 }
 `;
