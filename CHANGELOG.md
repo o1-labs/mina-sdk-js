@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-18
+
+### Changed
+
+- First release published end-to-end via npm OIDC trusted publishing from GitHub Actions (no token, with provenance).
+
 ## [0.2.1] - 2026-05-18
 
 ### Changed
