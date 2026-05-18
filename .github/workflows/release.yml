@@ -3,8 +3,8 @@ name: Release
 # Publishes the package to npm when a GitHub Release is published.
 #
 # Trusted publishing: register this workflow on npmjs.com under the
-# `mina-sdk` package settings — Trusted Publisher → GitHub Actions →
-# repository `MinaProtocol/mina-sdk-js`, workflow `release.yml`, env
+# `@o1-labs/mina-sdk` package settings — Trusted Publisher → GitHub Actions →
+# repository `o1-labs/mina-sdk-js`, workflow `release.yml`, env
 # `npm`. Once registered, no NPM_TOKEN is needed; the OIDC `id-token`
 # claim authenticates the publish step.
 #

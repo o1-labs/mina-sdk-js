@@ -1,7 +1,7 @@
 # Mina JavaScript SDK
 
-[![CI](https://github.com/MinaProtocol/mina-sdk-js/actions/workflows/ci.yml/badge.svg)](https://github.com/MinaProtocol/mina-sdk-js/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/mina-sdk.svg)](https://www.npmjs.com/package/mina-sdk)
+[![CI](https://github.com/o1-labs/mina-sdk-js/actions/workflows/ci.yml/badge.svg)](https://github.com/o1-labs/mina-sdk-js/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@o1-labs/mina-sdk.svg)](https://www.npmjs.com/package/@o1-labs/mina-sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 TypeScript/JavaScript SDK for interacting with [Mina Protocol](https://minaprotocol.com) nodes via GraphQL. Companion to [`mina-sdk-python`](https://github.com/MinaProtocol/mina-sdk-python), [`mina-sdk-go`](https://github.com/MinaProtocol/mina-sdk-go), and [`mina-sdk-rust`](https://github.com/MinaProtocol/mina-sdk-rust).
@@ -17,13 +17,13 @@ TypeScript/JavaScript SDK for interacting with [Mina Protocol](https://minaproto
 ## Installation
 
 ```bash
-npm install mina-sdk
+npm install @o1-labs/mina-sdk
 ```
 
 ## Quick Start
 
 ```ts
-import { Currency, MinaClient } from 'mina-sdk';
+import { Currency, MinaClient } from '@o1-labs/mina-sdk';
 
 const client = new MinaClient();
 
@@ -44,7 +44,7 @@ console.log(`Tx hash: ${result.hash}`);
 ## Configuration
 
 ```ts
-import { MinaClient } from 'mina-sdk';
+import { MinaClient } from '@o1-labs/mina-sdk';
 
 const client = new MinaClient({
   graphqlUri: 'http://127.0.0.1:3085/graphql', // default
@@ -83,7 +83,7 @@ Constructor options are validated eagerly — invalid values throw `RangeError` 
 ### Currency
 
 ```ts
-import { Currency } from 'mina-sdk';
+import { Currency } from '@o1-labs/mina-sdk';
 
 const a = Currency.fromMina(10);           // 10 MINA
 const b = Currency.fromMina('1.5');        // 1.5 MINA

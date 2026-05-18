@@ -4,7 +4,7 @@ import {
   DaemonConnectionError,
   GraphQLError,
   MinaClient,
-} from 'mina-sdk';
+} from '@o1-labs/mina-sdk';
 
 async function main() {
   const client = new MinaClient();

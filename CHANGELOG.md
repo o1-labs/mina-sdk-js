@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-18
+
+### Changed
+
+- Package renamed from `mina-sdk` to `@o1-labs/mina-sdk` and moved to the `o1-labs` GitHub organization.
+- First release published via npm OIDC trusted publishing (provenance attestation included).
+
 ### Added
 
 - Initial scaffold of the Mina JavaScript SDK.
