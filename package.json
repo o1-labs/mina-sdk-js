@@ -1,6 +1,6 @@
 {
   "name": "@o1-labs/mina-sdk",
-  "version": "0.2.2",
+  "version": "0.2.3-oidc-debug.1",
   "description": "TypeScript / JavaScript SDK for interacting with Mina Protocol nodes via GraphQL",
   "license": "Apache-2.0",
   "author": "O(1) Labs <build@o1labs.org>",
