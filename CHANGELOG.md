@@ -7,18 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-21
+
+### Fixed
+
+- npm OIDC trusted publishing from GitHub Actions. The release job runs on Node
+  20, which ships npm 10.x; that version signs provenance but cannot perform the
+  OIDC -> npm token exchange, so the publish `PUT` was unauthenticated and the
+  registry rejected it with a 404. The job now upgrades to `npm@latest`
+  (>= 11.5.1) before publishing. This is the first release actually published via
+  OIDC trusted publishing (no token, with provenance).
+
 ## [0.2.2] - 2026-05-18
 
 ### Changed
 
-- First release published end-to-end via npm OIDC trusted publishing from GitHub Actions (no token, with provenance).
+- Attempted the first OIDC-based publish from GitHub Actions; it failed with a
+  404 and was never published to npm. See 0.2.3 for the fix.
 
 ## [0.2.1] - 2026-05-18
 
 ### Changed
 
 - Package renamed from `mina-sdk` to `@o1-labs/mina-sdk` and moved to the `o1-labs` GitHub organization.
-- First release published via npm OIDC trusted publishing (provenance attestation included).
+- First version published to npm (published manually with a token).
 
 ### Added
 
