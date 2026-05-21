@@ -46,6 +46,13 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
+      # OIDC trusted publishing (the OIDC -> npm token exchange) requires
+      # npm >= 11.5.1. Node 20 ships npm 10.x, which signs provenance via
+      # GitHub OIDC but cannot authenticate the publish itself, so the
+      # registry rejects the PUT with a 404. Upgrade before publishing.
+      - run: npm install -g npm@latest
+      - run: npm --version
+
       - run: npm ci
       - run: npm run build
 
