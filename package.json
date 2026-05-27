@@ -50,6 +50,7 @@
     "format": "prettier --write src tests examples",
     "format:check": "prettier --check src tests examples",
     "typecheck": "tsc --noEmit",
+    "check:drift": "node scripts/check-schema-drift.mjs",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
