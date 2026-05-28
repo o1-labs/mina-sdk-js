@@ -18,9 +18,20 @@ export interface AccountTiming {
 }
 
 /**
+ * `setVerificationKey` is a richer permission than the others: it pins the
+ * auth predicate to a specific transaction version, so a verification-key
+ * rotation can be authorized differently depending on which fork installed
+ * the previous key.
+ */
+export interface SetVerificationKeyPermission {
+  auth: string;
+  txnVersion: string;
+}
+
+/**
  * Per-action permissions on an account. Each entry names an auth predicate
- * the daemon enforces for that action (e.g. "signature", "proof", "either",
- * "none"). The full set is sparse on non-zkApp accounts.
+ * the daemon enforces for that action (e.g. "Signature", "Proof", "Either",
+ * "None"). The full set is sparse on non-zkApp accounts.
  */
 export interface AccountPermissions {
   editState?: string;
@@ -29,7 +40,7 @@ export interface AccountPermissions {
   access?: string;
   setDelegate?: string;
   setPermissions?: string;
-  setVerificationKey?: string;
+  setVerificationKey?: SetVerificationKeyPermission;
   setZkappUri?: string;
   editActionState?: string;
   setTokenSymbol?: string;
