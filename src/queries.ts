@@ -10,12 +10,25 @@ query {
     syncStatus
     blockchainLength
     highestBlockLengthReceived
+    highestUnvalidatedBlockLengthReceived
     uptimeSecs
     stateHash
     commitId
+    numAccounts
+    ledgerMerkleRoot
+    chainId
+    catchupStatus
+    blockProductionKeys
+    coinbaseReceiver
     peers {
       peerId
       host
+      libp2pPort
+    }
+    addrsAndPorts {
+      externalIp
+      bindIp
+      clientPort
       libp2pPort
     }
   }
@@ -28,38 +41,70 @@ query {
 }
 `;
 
-export const QUERY_ACCOUNT = `
-query ($publicKey: PublicKey!) {
-  account(publicKey: $publicKey) {
+// Account selection covers everything an SDK consumer or MCP tool typically
+// needs: balance, nonce, delegate, vesting timing, permissions, zkApp state.
+// Optional fields in `AccountData` map 1:1 to the selection here; the daemon
+// returns null for fields that don't apply to a given account (e.g. timing
+// is null on untimed accounts, zkappState is null on non-zkApp accounts).
+const ACCOUNT_SELECTION = `
     publicKey
     nonce
     delegate
     tokenId
+    tokenSymbol
+    votingFor
+    receiptChainHash
     balance {
       total
       liquid
       locked
+      blockHeight
     }
-  }
+    timing {
+      initialMinimumBalance
+      cliffTime
+      cliffAmount
+      vestingPeriod
+      vestingIncrement
+    }
+    permissions {
+      editState
+      send
+      receive
+      access
+      setDelegate
+      setPermissions
+      setVerificationKey {
+        auth
+        txnVersion
+      }
+      setZkappUri
+      editActionState
+      setTokenSymbol
+      incrementNonce
+      setVotingFor
+      setTiming
+    }
+    zkappState
+    provedState
+    zkappUri
+`;
+
+export const QUERY_ACCOUNT = `
+query ($publicKey: PublicKey!) {
+  account(publicKey: $publicKey) {${ACCOUNT_SELECTION}  }
 }
 `;
 
 export const QUERY_ACCOUNT_WITH_TOKEN = `
 query ($publicKey: PublicKey!, $token: TokenId!) {
-  account(publicKey: $publicKey, token: $token) {
-    publicKey
-    nonce
-    delegate
-    tokenId
-    balance {
-      total
-      liquid
-      locked
-    }
-  }
+  account(publicKey: $publicKey, token: $token) {${ACCOUNT_SELECTION}  }
 }
 `;
 
+// bestChain returns blocks rather than just stateHashes; covers the same
+// shape as `block` plus stakingEpochData and the typo'd `coinbaseReceiever`
+// field (preserved verbatim — that's the daemon's field name).
 export const QUERY_BEST_CHAIN = `
 query ($maxLength: Int) {
   bestChain(maxLength: $maxLength) {
@@ -69,10 +114,41 @@ query ($maxLength: Int) {
       publicKey
     }
     protocolState {
+      previousStateHash
       consensusState {
         blockHeight
-        slotSinceGenesis
+        epoch
         slot
+        slotSinceGenesis
+        blockCreator
+        coinbaseReceiever
+        stakingEpochData {
+          epochLength
+        }
+      }
+      blockchainState {
+        date
+        utcDate
+        snarkedLedgerHash
+        stagedLedgerHash
+      }
+    }
+    transactions {
+      userCommands {
+        id
+        hash
+        kind
+        nonce
+        source {
+          publicKey
+        }
+        receiver {
+          publicKey
+        }
+        amount
+        fee
+        memo
+        failureReason
       }
     }
   }
@@ -89,9 +165,11 @@ query {
 }
 `;
 
-export const QUERY_POOLED_USER_COMMANDS = `
-query ($publicKey: PublicKey!) {
-  pooledUserCommands(publicKey: $publicKey) {
+// The daemon's `pooledUserCommands` returns both the legacy flat `from`/`to`
+// pubkey fields and the newer `source { publicKey }` / `receiver { publicKey }`
+// account references. We select both so consumers can use whichever shape
+// matches their existing code; the typed return mirrors both.
+const POOLED_COMMAND_SELECTION = `
     id
     hash
     kind
@@ -100,22 +178,25 @@ query ($publicKey: PublicKey!) {
     fee
     from
     to
-  }
+    source {
+      publicKey
+    }
+    receiver {
+      publicKey
+    }
+    memo
+    failureReason
+`;
+
+export const QUERY_POOLED_USER_COMMANDS = `
+query ($publicKey: PublicKey!) {
+  pooledUserCommands(publicKey: $publicKey) {${POOLED_COMMAND_SELECTION}  }
 }
 `;
 
 export const QUERY_POOLED_USER_COMMANDS_ALL = `
 query {
-  pooledUserCommands {
-    id
-    hash
-    kind
-    nonce
-    amount
-    fee
-    from
-    to
-  }
+  pooledUserCommands {${POOLED_COMMAND_SELECTION}  }
 }
 `;
 
@@ -127,14 +208,26 @@ query {
 // CAUTION: the variable is declared, so when callers don't want client-side
 // signing they must pass `signature: null` explicitly. Omitting the variable
 // triggers the daemon's "Missing variable `signature`" error.
+const SUBMITTED_COMMAND_SELECTION = `
+      id
+      hash
+      kind
+      nonce
+      source {
+        publicKey
+      }
+      receiver {
+        publicKey
+      }
+      amount
+      fee
+      memo
+`;
+
 export const MUTATION_SEND_PAYMENT = `
 mutation ($input: SendPaymentInput!, $signature: SignatureInput) {
   sendPayment(input: $input, signature: $signature) {
-    payment {
-      id
-      hash
-      nonce
-    }
+    payment {${SUBMITTED_COMMAND_SELECTION}    }
   }
 }
 `;
@@ -142,11 +235,7 @@ mutation ($input: SendPaymentInput!, $signature: SignatureInput) {
 export const MUTATION_SEND_DELEGATION = `
 mutation ($input: SendDelegationInput!, $signature: SignatureInput) {
   sendDelegation(input: $input, signature: $signature) {
-    delegation {
-      id
-      hash
-      nonce
-    }
+    delegation {${SUBMITTED_COMMAND_SELECTION}    }
   }
 }
 `;
@@ -181,6 +270,7 @@ query ($stateHash: String, $height: Int) {
         slot
         slotSinceGenesis
         blockCreator
+        coinbaseReceiever
       }
       blockchainState {
         date
@@ -191,13 +281,28 @@ query ($stateHash: String, $height: Int) {
     }
     transactions {
       coinbase
-      coinbaseReceiverAccount { publicKey }
-      feeTransfer { recipient fee type }
+      coinbaseReceiverAccount {
+        publicKey
+      }
+      feeTransfer {
+        recipient
+        fee
+        type
+      }
       userCommands {
-        id hash kind nonce
-        source { publicKey }
-        receiver { publicKey }
-        amount fee memo
+        id
+        hash
+        kind
+        nonce
+        source {
+          publicKey
+        }
+        receiver {
+          publicKey
+        }
+        amount
+        fee
+        memo
         failureReason
       }
     }
