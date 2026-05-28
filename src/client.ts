@@ -22,6 +22,9 @@ import {
 } from './queries.js';
 import type {
   AccountData,
+  AccountPermissions,
+  AccountTiming,
+  AddrsAndPorts,
   Block,
   BlockArgs,
   BlockInfo,
@@ -35,6 +38,7 @@ import type {
   SendDelegationResult,
   SendPaymentParams,
   SendPaymentResult,
+  SubmittedCommand,
   TrackedAccount,
   TransactionStatus,
   TransactionStatusArgs,
@@ -165,10 +169,23 @@ export class MinaClient {
         syncStatus: string;
         blockchainLength: number | null;
         highestBlockLengthReceived: number | null;
+        highestUnvalidatedBlockLengthReceived: number | null;
         uptimeSecs: number | null;
         stateHash: string;
         commitId: string;
+        numAccounts: number | null;
+        ledgerMerkleRoot: string | null;
+        chainId: string | null;
+        catchupStatus: string[] | null;
+        blockProductionKeys: string[] | null;
+        coinbaseReceiver: string | null;
         peers: Array<{ peerId: string; host: string; libp2pPort: number }> | null;
+        addrsAndPorts: {
+          externalIp: string;
+          bindIp: string;
+          clientPort: number;
+          libp2pPort: number;
+        } | null;
       };
     }>(QUERY_DAEMON_STATUS, undefined, 'get_daemon_status');
     const ds = data.daemonStatus;
@@ -185,6 +202,24 @@ export class MinaClient {
       status.highestBlockLengthReceived = ds.highestBlockLengthReceived;
     }
     if (ds.uptimeSecs != null) status.uptimeSecs = ds.uptimeSecs;
+    if (ds.numAccounts != null) status.numAccounts = ds.numAccounts;
+    if (ds.highestUnvalidatedBlockLengthReceived != null) {
+      status.highestUnvalidatedBlockLengthReceived = ds.highestUnvalidatedBlockLengthReceived;
+    }
+    if (ds.ledgerMerkleRoot != null) status.ledgerMerkleRoot = ds.ledgerMerkleRoot;
+    if (ds.chainId != null) status.chainId = ds.chainId;
+    if (ds.catchupStatus != null) status.catchupStatus = ds.catchupStatus;
+    if (ds.blockProductionKeys != null) status.blockProductionKeys = ds.blockProductionKeys;
+    if (ds.coinbaseReceiver != null) status.coinbaseReceiver = ds.coinbaseReceiver;
+    if (ds.addrsAndPorts != null) {
+      const addrs: AddrsAndPorts = {
+        externalIp: ds.addrsAndPorts.externalIp,
+        bindIp: ds.addrsAndPorts.bindIp,
+        clientPort: ds.addrsAndPorts.clientPort,
+        libp2pPort: ds.addrsAndPorts.libp2pPort,
+      };
+      status.addrsAndPorts = addrs;
+    }
     return status;
   }
 
@@ -206,7 +241,20 @@ export class MinaClient {
         nonce: string | number;
         delegate: string;
         tokenId: string;
-        balance: { total: string; liquid: string | null; locked: string | null };
+        tokenSymbol: string | null;
+        votingFor: string | null;
+        receiptChainHash: string | null;
+        balance: {
+          total: string;
+          liquid: string | null;
+          locked: string | null;
+          blockHeight: number | string | null;
+        };
+        timing: AccountTiming | null;
+        permissions: AccountPermissions | null;
+        zkappState: string[] | null;
+        provedState: boolean | null;
+        zkappUri: string | null;
       } | null;
     }>(query, variables, 'get_account');
 
@@ -218,13 +266,25 @@ export class MinaClient {
     const balance: AccountData['balance'] = { total };
     if (acc.balance.liquid) balance.liquid = Currency.fromGraphQL(acc.balance.liquid);
     if (acc.balance.locked) balance.locked = Currency.fromGraphQL(acc.balance.locked);
-    return {
+    if (acc.balance.blockHeight != null) {
+      balance.blockHeight = Number(acc.balance.blockHeight);
+    }
+    const account: AccountData = {
       publicKey: acc.publicKey,
       nonce: Number(acc.nonce),
       delegate: acc.delegate,
       tokenId: acc.tokenId,
       balance,
     };
+    if (acc.tokenSymbol != null) account.tokenSymbol = acc.tokenSymbol;
+    if (acc.votingFor !== undefined) account.votingFor = acc.votingFor;
+    if (acc.receiptChainHash !== undefined) account.receiptChainHash = acc.receiptChainHash;
+    if (acc.timing !== undefined) account.timing = acc.timing;
+    if (acc.permissions !== undefined) account.permissions = acc.permissions;
+    if (acc.zkappState !== undefined) account.zkappState = acc.zkappState;
+    if (acc.provedState !== undefined) account.provedState = acc.provedState;
+    if (acc.zkappUri !== undefined) account.zkappUri = acc.zkappUri;
+    return account;
   }
 
   async getBestChain(maxLength?: number): Promise<BlockInfo[]> {
@@ -235,23 +295,78 @@ export class MinaClient {
         commandTransactionCount: number;
         creatorAccount: { publicKey: string | null };
         protocolState: {
+          previousStateHash: string;
           consensusState: {
             blockHeight: string;
-            slotSinceGenesis: string;
+            epoch: string | number;
             slot: string;
+            slotSinceGenesis: string;
+            blockCreator: string;
+            // The Mina daemon spells this field "coinbaseReceiever" (sic).
+            coinbaseReceiever: string | null;
+            stakingEpochData: { epochLength: string | number } | null;
           };
+          blockchainState: {
+            date: string;
+            utcDate: string;
+            snarkedLedgerHash: string;
+            stagedLedgerHash: string;
+          };
+        };
+        transactions: {
+          userCommands: Array<{
+            id: string;
+            hash: string;
+            kind: string;
+            nonce: string | number;
+            source: { publicKey: string };
+            receiver: { publicKey: string };
+            amount: string;
+            fee: string;
+            memo: string;
+            failureReason: string | null;
+          }>;
         };
       }> | null;
     }>(QUERY_BEST_CHAIN, variables, 'get_best_chain');
 
-    return (data.bestChain ?? []).map((b) => ({
-      stateHash: b.stateHash,
-      height: Number(b.protocolState.consensusState.blockHeight),
-      globalSlotSinceHardFork: Number(b.protocolState.consensusState.slot),
-      globalSlotSinceGenesis: Number(b.protocolState.consensusState.slotSinceGenesis),
-      creatorPublicKey: b.creatorAccount.publicKey ?? 'unknown',
-      commandTransactionCount: b.commandTransactionCount,
-    }));
+    return (data.bestChain ?? []).map((b): BlockInfo => {
+      const cs = b.protocolState.consensusState;
+      const bs = b.protocolState.blockchainState;
+      const userCommands: BlockTransaction[] = b.transactions.userCommands.map((c) => ({
+        id: c.id,
+        hash: c.hash,
+        kind: c.kind,
+        nonce: String(c.nonce),
+        source: c.source.publicKey,
+        receiver: c.receiver.publicKey,
+        amount: c.amount,
+        fee: c.fee,
+        memo: c.memo,
+        failureReason: c.failureReason,
+      }));
+      const info: BlockInfo = {
+        stateHash: b.stateHash,
+        height: Number(cs.blockHeight),
+        globalSlotSinceHardFork: Number(cs.slot),
+        globalSlotSinceGenesis: Number(cs.slotSinceGenesis),
+        creatorPublicKey: b.creatorAccount.publicKey ?? 'unknown',
+        commandTransactionCount: b.commandTransactionCount,
+        epoch: Number(cs.epoch),
+        previousStateHash: b.protocolState.previousStateHash,
+        blockCreator: cs.blockCreator,
+        date: bs.date,
+        utcDate: bs.utcDate,
+        snarkedLedgerHash: bs.snarkedLedgerHash,
+        stagedLedgerHash: bs.stagedLedgerHash,
+        userCommands,
+      };
+      if (cs.coinbaseReceiever != null) info.coinbaseReceiver = cs.coinbaseReceiever;
+      if (cs.stakingEpochData) {
+        info.stakingEpochData = { epochLength: Number(cs.stakingEpochData.epochLength) };
+      }
+      return info;
+    });
   }
 
   async getPeers(): Promise<PeerInfo[]> {
@@ -274,19 +389,30 @@ export class MinaClient {
         fee: string;
         from: string;
         to: string;
+        source: { publicKey: string } | null;
+        receiver: { publicKey: string } | null;
+        memo: string | null;
+        failureReason: string | null;
       }> | null;
     }>(query, variables, 'get_pooled_user_commands');
 
-    return (data.pooledUserCommands ?? []).map((c) => ({
-      id: c.id,
-      hash: c.hash,
-      kind: c.kind,
-      nonce: String(c.nonce),
-      amount: c.amount,
-      fee: c.fee,
-      from: c.from,
-      to: c.to,
-    }));
+    return (data.pooledUserCommands ?? []).map((c) => {
+      const cmd: PooledUserCommand = {
+        id: c.id,
+        hash: c.hash,
+        kind: c.kind,
+        nonce: String(c.nonce),
+        amount: c.amount,
+        fee: c.fee,
+        from: c.from,
+        to: c.to,
+      };
+      if (c.source?.publicKey) cmd.source = c.source.publicKey;
+      if (c.receiver?.publicKey) cmd.receiver = c.receiver.publicKey;
+      if (c.memo != null) cmd.memo = c.memo;
+      if (c.failureReason !== undefined) cmd.failureReason = c.failureReason;
+      return cmd;
+    });
   }
 
   // -- Mutations --
@@ -305,10 +431,9 @@ export class MinaClient {
     // signing must pass an explicit null — omitting the variable triggers
     // the daemon's "Missing variable `signature`" error.
     const data = await this.executeQuery<{
-      sendPayment: { payment: { id: string; hash: string; nonce: string | number } };
+      sendPayment: { payment: SubmittedCommandRaw };
     }>(MUTATION_SEND_PAYMENT, { input, signature: params.signature ?? null }, 'send_payment');
-    const p = data.sendPayment.payment;
-    return { id: p.id, hash: p.hash, nonce: Number(p.nonce) };
+    return mapSubmittedCommand(data.sendPayment.payment);
   }
 
   async sendDelegation(params: SendDelegationParams): Promise<SendDelegationResult> {
@@ -321,10 +446,9 @@ export class MinaClient {
     if (params.nonce !== undefined) input.nonce = String(params.nonce);
 
     const data = await this.executeQuery<{
-      sendDelegation: { delegation: { id: string; hash: string; nonce: string | number } };
+      sendDelegation: { delegation: SubmittedCommandRaw };
     }>(MUTATION_SEND_DELEGATION, { input, signature: params.signature ?? null }, 'send_delegation');
-    const d = data.sendDelegation.delegation;
-    return { id: d.id, hash: d.hash, nonce: Number(d.nonce) };
+    return mapSubmittedCommand(data.sendDelegation.delegation);
   }
 
   /** Pass an empty string or omit `publicKey` to disable the SNARK worker. */
@@ -369,6 +493,8 @@ export class MinaClient {
             slot: string | number;
             slotSinceGenesis: string | number;
             blockCreator: string;
+            // Mina daemon spells this "coinbaseReceiever" (sic).
+            coinbaseReceiever: string | null;
           };
           blockchainState: {
             date: string;
@@ -423,7 +549,7 @@ export class MinaClient {
       fee: f.fee,
       type: f.type,
     }));
-    return {
+    const block: Block = {
       stateHash: b.stateHash,
       previousStateHash: b.protocolState.previousStateHash,
       blockHeight: Number(cs.blockHeight),
@@ -440,6 +566,8 @@ export class MinaClient {
       feeTransfers,
       userCommands,
     };
+    if (cs.coinbaseReceiever != null) block.coinbaseReceiverConsensus = cs.coinbaseReceiever;
+    return block;
   }
 
   /**
@@ -487,4 +615,31 @@ export class MinaClient {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface SubmittedCommandRaw {
+  id: string;
+  hash: string;
+  kind?: string;
+  nonce: string | number;
+  source?: { publicKey: string };
+  receiver?: { publicKey: string };
+  amount?: string;
+  fee?: string;
+  memo?: string;
+}
+
+function mapSubmittedCommand(p: SubmittedCommandRaw): SubmittedCommand {
+  const out: SubmittedCommand = {
+    id: p.id,
+    hash: p.hash,
+    nonce: Number(p.nonce),
+  };
+  if (p.kind != null) out.kind = p.kind;
+  if (p.source?.publicKey) out.source = p.source.publicKey;
+  if (p.receiver?.publicKey) out.receiver = p.receiver.publicKey;
+  if (p.amount != null) out.amount = p.amount;
+  if (p.fee != null) out.fee = p.fee;
+  if (p.memo != null) out.memo = p.memo;
+  return out;
 }
