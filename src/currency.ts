@@ -72,6 +72,16 @@ export class Currency {
     return this.toMina();
   }
 
+  /**
+   * JSON-serializes as the nanomina string. Without this, `JSON.stringify`
+   * throws "Do not know how to serialize a BigInt" because the internal
+   * `nano` field is a BigInt — downstream consumers like the MCP server
+   * stringify entire `AccountData` payloads to send to LLM tools.
+   */
+  toJSON(): string {
+    return this.nano.toString();
+  }
+
   isZero(): boolean {
     return this.nano === 0n;
   }
