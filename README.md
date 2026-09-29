@@ -146,6 +146,65 @@ ingest the block), or `VerificationBackendError` if `mina-verify-wasm` is not in
 - `CurrencyUnderflowError` — `Currency.sub` would go negative
 - `VerificationError` — a block's SNARK proof did not verify (do not ingest)
 - `VerificationBackendError` — the optional `mina-verify-wasm` backend is not installed
+- `ItnUnauthorizedError`, `ItnSequencingError`, `ItnHttpError`, `InvalidItnKeyError` —
+  the ITN client (`@o1-labs/mina-sdk/itn`)
+
+## ITN server (`@o1-labs/mina-sdk/itn`)
+
+A daemon started with `ITN_FEATURES=1`, `--itn-graphql-port` and `--itn-keys`
+serves a second GraphQL API, which load testing tools use. `ItnClient` signs
+each request with an ed25519 `ItnKey` whose public half must be in
+`--itn-keys`, and handles the daemon's sequence numbers (a new `auth` after a
+daemon restart, HTTP 412). It is a separate entry point and uses `node:crypto`.
+
+```ts
+import { Currency } from '@o1-labs/mina-sdk';
+import { ItnClient, ItnKey } from '@o1-labs/mina-sdk/itn';
+
+const key = ItnKey.fromBase64(seedBase64); // base64 32-byte ed25519 seed
+console.log('--itn-keys', key.publicKeyBase64());
+
+const itn = new ItnClient({ graphqlUri: 'http://127.0.0.1:3086/graphql', key });
+const logs = await itn.internalLogs(0);
+const handle = await itn.schedulePayments({
+  durationMin: 10,
+  tps: 0.5,
+  memoPrefix: 'load',
+  maxFee: Currency.fromMina('0.2'),
+  minFee: Currency.fromMina('0.1'),
+  amount: Currency.fromNanomina(1000),
+  receiver: 'B62q...',
+  senders: ['EK...'],
+});
+await itn.stopScheduledTransactions(handle);
+```
+
+| Method | GraphQL |
+|---|---|
+| `auth()` | `auth` (server UUID, sequence number, peer ID, block producer) |
+| `slotsWon()` | `slotsWon` |
+| `internalLogs(start)` / `flushInternalLogs(end)` | `internalLogs` / `flushInternalLogs` |
+| `schedulePayments(details)` | `schedulePayments` |
+| `scheduleZkappCommands(details)` | `scheduleZkappCommands` |
+| `stopScheduledTransactions(handle)` | `stopScheduledTransactions` |
+| `updateGating(update)` | `updateGating` |
+| `stopDaemon({ delaySeconds, cleanConfig })` | `stopDaemon` |
+| `setZkappCommandLimit(limit)` | `zkAppCommandLimit` |
+| `executeQuery(query, vars, name)` | any document, sequenced and signed |
+
+Requests of one client are sent one at a time, because the daemon accepts only
+its exact next sequence number; every method takes `{ signal }` to cancel it.
+A sequenced request is never repeated after a transport error, because the
+daemon may already have run it. `lastAuth()` returns the latest handshake, for
+a caller that keeps the node's peer ID. Errors: `ItnUnauthorizedError` (401),
+`ItnSequencingError` (412 after a new auth), `InvalidItnKeyError`, and
+`DaemonConnectionError` whose `cause` is an `ItnHttpError` with the status.
+
+`schema/itn_graphql_schema.json` is an introspection dump of the ITN schema
+(daemon `4.0.0-6965b50` devnet), and a test checks every ITN document against
+it. The Rust (`mina_sdk::itn`) and Go (`mina-sdk-go/itn`) SDKs have the same
+client. Integration tests: set `MINA_ITN_URI` and `MINA_ITN_KEY` and run
+`npm run test:integration`.
 
 ## Custom Queries
 

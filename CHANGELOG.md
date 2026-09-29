@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ITN client, entry point `@o1-labs/mina-sdk/itn`: `ItnClient` for the daemon's
+  ITN GraphQL server (`--itn-graphql-port`), with ed25519 request signing
+  (`ItnKey`), the `auth` handshake, sequence numbers (one request at a time,
+  a new auth after HTTP 412) and cancellation through `{ signal }`. It covers
+  every field of `schema_itn`. `schema/itn_graphql_schema.json` is an
+  introspection dump of that schema, and a test checks the ITN documents
+  against it. The build now uses code splitting, so both entry points share
+  one set of error classes.
+
 - Trustless block verification. `verifyPrecomputedBlock(precomputed, { network })`
   verifies a block's Pickles/kimchi SNARK proof and returns proof-backed facts
   (`height`, `stateHash`, `previousStateHash`, `stagedLedgerHash`);
