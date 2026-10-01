@@ -114,6 +114,16 @@ export interface DaemonStatus {
 
 export interface StakingEpochData {
   epochLength: number;
+  /** Epoch seed. */
+  seed?: string;
+  /** Hash of the staking ledger. */
+  ledgerHash?: string;
+}
+
+/** The next epoch's seed and ledger hash, from the consensus state. */
+export interface NextEpochData {
+  seed: string;
+  ledgerHash: string;
 }
 
 export interface BlockInfo {
@@ -136,12 +146,18 @@ export interface BlockInfo {
    */
   coinbaseReceiver?: string;
   stakingEpochData?: StakingEpochData;
+  nextEpochData?: NextEpochData;
   /** Wall-clock timestamp the daemon assigned when packaging the block. */
   date?: string;
   utcDate?: string;
   snarkedLedgerHash?: string;
   stagedLedgerHash?: string;
-  /** User commands included in this block (only populated by `getBestChain`). */
+  /** Coinbase of the block, as a nanomina decimal string. */
+  coinbase?: string;
+  /** Public key of the account that received the coinbase; null if none. */
+  coinbaseReceiverAccount?: string | null;
+  feeTransfers?: FeeTransfer[];
+  /** User commands included in this block. */
   userCommands?: BlockTransaction[];
 }
 
@@ -238,6 +254,8 @@ export interface FeeTransfer {
 export interface Block {
   stateHash: string;
   previousStateHash: string;
+  creatorPublicKey: string;
+  commandTransactionCount: number;
   blockHeight: number;
   epoch: number;
   slot: number;
@@ -257,6 +275,8 @@ export interface Block {
   coinbaseReceiver: string | null;
   feeTransfers: FeeTransfer[];
   userCommands: BlockTransaction[];
+  stakingEpochData: StakingEpochData;
+  nextEpochData: NextEpochData;
 }
 
 export interface TransactionStatusArgs {
@@ -287,4 +307,50 @@ export interface TrackedAccount {
   publicKey: string;
   /** Total balance as a nanomina decimal string. */
   balance: string;
+}
+
+/** Transaction pool, snark pool and block production metrics of the daemon. */
+export interface DaemonMetrics {
+  blockProductionDelay: number[];
+  transactionPoolDiffReceived: number;
+  transactionPoolDiffBroadcasted: number;
+  transactionsAddedToPool: number;
+  transactionPoolSize: number;
+  snarkPoolDiffReceived: number;
+  snarkPoolDiffBroadcasted: number;
+  pendingSnarkWork: number;
+  snarkPoolSize: number;
+}
+
+/** The fee payer of a zkApp command. */
+export interface ZkappFeePayer {
+  publicKey: string;
+  fee: Currency;
+  nonce: number;
+  /** Global slot after which the command is not valid; null for no limit. */
+  validUntil: number | null;
+}
+
+/** Why an account update of a zkApp command failed. */
+export interface ZkappFailure {
+  /** Index of the account update; null for the command as a whole. */
+  index: number | null;
+  failures: string[];
+}
+
+/** A zkApp command in the transaction pool, or one just sent. */
+export interface ZkappCommandResult {
+  id: string;
+  hash: string;
+  memo: string;
+  feePayer: ZkappFeePayer;
+  /** One entry for each failing account update; null if the command did not fail. */
+  failureReason: ZkappFailure[] | null;
+}
+
+/** Completed snark work in the snark pool. */
+export interface CompletedWork {
+  prover: string;
+  fee: Currency;
+  workIds: number[];
 }

@@ -9,14 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The common API of the Mina SDKs, from
+  [mina-sdk-spec](https://github.com/o1-labs/mina-sdk-spec) v0.1.0: `spec/` is
+  a copy at the tag in `spec/VERSION`. `tests/spec.test.ts` checks that the
+  query strings (daemon and ITN) are the specification's documents, and a CI
+  job checks that `spec/` is the tag's copy.
+- Methods of the common API that this SDK did not have: `getDaemonMetrics`,
+  `getGenesisBlock`, `getPooledZkappCommands`, `getSnarkPool`,
+  `getForkConfig`, `sendZkapp` and `unlockAccount`, with the types
+  `DaemonMetrics`, `ZkappCommandResult`, `ZkappFeePayer`, `ZkappFailure`,
+  `CompletedWork` and `NextEpochData`.
+- Result fields of the common API: `BlockInfo` gets the next epoch data, the
+  staking epoch seed and ledger hash, `coinbase`, `coinbaseReceiverAccount`
+  and `feeTransfers` (for `getBestChain` too); `Block` gets
+  `creatorPublicKey`, `commandTransactionCount` and the epoch data.
+- Integration tests of the daemon client (`tests/integration/daemon.test.ts`,
+  `MINA_GRAPHQL_URI`).
+
 - ITN client, entry point `@o1-labs/mina-sdk/itn`: `ItnClient` for the daemon's
   ITN GraphQL server (`--itn-graphql-port`), with ed25519 request signing
   (`ItnKey`), the `auth` handshake, sequence numbers (one request at a time,
   a new auth after HTTP 412) and cancellation through `{ signal }`. It covers
-  every field of `schema_itn`. `schema/itn_graphql_schema.json` is an
-  introspection dump of that schema, and a test checks the ITN documents
-  against it. The build now uses code splitting, so both entry points share
-  one set of error classes.
+  every field of `schema_itn`. The build now uses code splitting, so both
+  entry points share one set of error classes.
 
 - Trustless block verification. `verifyPrecomputedBlock(precomputed, { network })`
   verifies a block's Pickles/kimchi SNARK proof and returns proof-backed facts
@@ -26,6 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optional, unbundled `mina-verify-wasm` package, loaded on first use; without it the
   calls throw `VerificationBackendError`. Verification is synchronous and CPU-bound
   (tens of seconds per block today).
+
+### Changed
+
+- Every query, including the ITN queries, is a named operation of the
+  specification. Nullable variables are always sent, as null when omitted:
+  `getAccount` and `getPooledUserCommands` use one document each, so
+  `QUERY_ACCOUNT_WITH_TOKEN` and `QUERY_POOLED_USER_COMMANDS_ALL` are
+  deprecated aliases, and `getBestChain` sends `maxLength: null`.
+- `getAccount` returns `timing: null` for an untimed account. Before, it
+  returned the daemon's timing object with every field null.
+
+### Removed
+
+- The schema drift check (`npm run check:drift`, the Schema Drift Check
+  workflow and `schema/`). The documents of this SDK are the documents of
+  mina-sdk-spec, whose weekly drift job validates them against the lightnet
+  daemons of `master`, `compatible` and `develop`.
 
 ## [0.2.3] - 2026-05-21
 

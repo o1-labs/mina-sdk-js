@@ -4,18 +4,23 @@ import type { GraphQLErrorEntry } from './errors.js';
 import {
   MUTATION_SEND_DELEGATION,
   MUTATION_SEND_PAYMENT,
+  MUTATION_SEND_ZKAPP,
   MUTATION_SET_SNARK_WORKER,
   MUTATION_SET_SNARK_WORK_FEE,
+  MUTATION_UNLOCK_ACCOUNT,
   QUERY_ACCOUNT,
-  QUERY_ACCOUNT_WITH_TOKEN,
   QUERY_BEST_CHAIN,
   QUERY_BLOCK,
+  QUERY_DAEMON_METRICS,
   QUERY_DAEMON_STATUS,
+  QUERY_FORK_CONFIG,
+  QUERY_GENESIS_BLOCK,
   QUERY_GENESIS_CONSTANTS,
   QUERY_NETWORK_ID,
   QUERY_PEERS,
   QUERY_POOLED_USER_COMMANDS,
-  QUERY_POOLED_USER_COMMANDS_ALL,
+  QUERY_POOLED_ZKAPP_COMMANDS,
+  QUERY_SNARK_POOL,
   QUERY_SYNC_STATUS,
   QUERY_TRACKED_ACCOUNTS,
   QUERY_TRANSACTION_STATUS,
@@ -29,6 +34,8 @@ import type {
   BlockArgs,
   BlockInfo,
   BlockTransaction,
+  CompletedWork,
+  DaemonMetrics,
   DaemonStatus,
   FeeTransfer,
   GenesisConstants,
@@ -42,6 +49,7 @@ import type {
   TrackedAccount,
   TransactionStatus,
   TransactionStatusArgs,
+  ZkappCommandResult,
 } from './types.js';
 
 export const DEFAULT_GRAPHQL_URI = 'http://127.0.0.1:3085/graphql';
@@ -223,6 +231,27 @@ export class MinaClient {
     return status;
   }
 
+  /** Transaction pool, snark pool and block production metrics. */
+  async getDaemonMetrics(): Promise<DaemonMetrics> {
+    const data = await this.executeQuery<{ daemonStatus: { metrics: DaemonMetrics } }>(
+      QUERY_DAEMON_METRICS,
+      undefined,
+      'get_daemon_metrics',
+    );
+    const m = data.daemonStatus.metrics;
+    return {
+      blockProductionDelay: m.blockProductionDelay,
+      transactionPoolDiffReceived: m.transactionPoolDiffReceived,
+      transactionPoolDiffBroadcasted: m.transactionPoolDiffBroadcasted,
+      transactionsAddedToPool: m.transactionsAddedToPool,
+      transactionPoolSize: m.transactionPoolSize,
+      snarkPoolDiffReceived: m.snarkPoolDiffReceived,
+      snarkPoolDiffBroadcasted: m.snarkPoolDiffBroadcasted,
+      pendingSnarkWork: m.pendingSnarkWork,
+      snarkPoolSize: m.snarkPoolSize,
+    };
+  }
+
   async getNetworkId(): Promise<string> {
     const data = await this.executeQuery<{ networkID: string }>(
       QUERY_NETWORK_ID,
@@ -233,8 +262,9 @@ export class MinaClient {
   }
 
   async getAccount(publicKey: string, tokenId?: string): Promise<AccountData> {
-    const query = tokenId ? QUERY_ACCOUNT_WITH_TOKEN : QUERY_ACCOUNT;
-    const variables: Variables = tokenId ? { publicKey, token: tokenId } : { publicKey };
+    // $token is nullable: null selects the default MINA token. Every declared
+    // variable is sent, because the daemon rejects a missing one.
+    const variables: Variables = { publicKey, token: tokenId || null };
     const data = await this.executeQuery<{
       account: {
         publicKey: string;
@@ -250,13 +280,13 @@ export class MinaClient {
           locked: string | null;
           blockHeight: number | string | null;
         };
-        timing: AccountTiming | null;
+        timing: { [K in keyof AccountTiming]: string | null } | null;
         permissions: AccountPermissions | null;
         zkappState: string[] | null;
         provedState: boolean | null;
         zkappUri: string | null;
       } | null;
-    }>(query, variables, 'get_account');
+    }>(QUERY_ACCOUNT, variables, 'get_account');
 
     if (!data.account) {
       throw new AccountNotFoundError(publicKey);
@@ -279,7 +309,7 @@ export class MinaClient {
     if (acc.tokenSymbol != null) account.tokenSymbol = acc.tokenSymbol;
     if (acc.votingFor !== undefined) account.votingFor = acc.votingFor;
     if (acc.receiptChainHash !== undefined) account.receiptChainHash = acc.receiptChainHash;
-    if (acc.timing !== undefined) account.timing = acc.timing;
+    if (acc.timing !== undefined) account.timing = parseTiming(acc.timing);
     if (acc.permissions !== undefined) account.permissions = acc.permissions;
     if (acc.zkappState !== undefined) account.zkappState = acc.zkappState;
     if (acc.provedState !== undefined) account.provedState = acc.provedState;
@@ -288,85 +318,24 @@ export class MinaClient {
   }
 
   async getBestChain(maxLength?: number): Promise<BlockInfo[]> {
-    const variables: Variables | undefined = maxLength && maxLength > 0 ? { maxLength } : undefined;
-    const data = await this.executeQuery<{
-      bestChain: Array<{
-        stateHash: string;
-        commandTransactionCount: number;
-        creatorAccount: { publicKey: string | null };
-        protocolState: {
-          previousStateHash: string;
-          consensusState: {
-            blockHeight: string;
-            epoch: string | number;
-            slot: string;
-            slotSinceGenesis: string;
-            blockCreator: string;
-            // The Mina daemon spells this field "coinbaseReceiever" (sic).
-            coinbaseReceiever: string | null;
-            stakingEpochData: { epochLength: string | number } | null;
-          };
-          blockchainState: {
-            date: string;
-            utcDate: string;
-            snarkedLedgerHash: string;
-            stagedLedgerHash: string;
-          };
-        };
-        transactions: {
-          userCommands: Array<{
-            id: string;
-            hash: string;
-            kind: string;
-            nonce: string | number;
-            source: { publicKey: string };
-            receiver: { publicKey: string };
-            amount: string;
-            fee: string;
-            memo: string;
-            failureReason: string | null;
-          }>;
-        };
-      }> | null;
-    }>(QUERY_BEST_CHAIN, variables, 'get_best_chain');
+    // $maxLength is nullable: null lets the daemon apply its default.
+    const variables: Variables = { maxLength: maxLength && maxLength > 0 ? maxLength : null };
+    const data = await this.executeQuery<{ bestChain: RawBlock[] | null }>(
+      QUERY_BEST_CHAIN,
+      variables,
+      'get_best_chain',
+    );
+    return (data.bestChain ?? []).map(parseBlockInfo);
+  }
 
-    return (data.bestChain ?? []).map((b): BlockInfo => {
-      const cs = b.protocolState.consensusState;
-      const bs = b.protocolState.blockchainState;
-      const userCommands: BlockTransaction[] = b.transactions.userCommands.map((c) => ({
-        id: c.id,
-        hash: c.hash,
-        kind: c.kind,
-        nonce: String(c.nonce),
-        source: c.source.publicKey,
-        receiver: c.receiver.publicKey,
-        amount: c.amount,
-        fee: c.fee,
-        memo: c.memo,
-        failureReason: c.failureReason,
-      }));
-      const info: BlockInfo = {
-        stateHash: b.stateHash,
-        height: Number(cs.blockHeight),
-        globalSlotSinceHardFork: Number(cs.slot),
-        globalSlotSinceGenesis: Number(cs.slotSinceGenesis),
-        creatorPublicKey: b.creatorAccount.publicKey ?? 'unknown',
-        commandTransactionCount: b.commandTransactionCount,
-        epoch: Number(cs.epoch),
-        previousStateHash: b.protocolState.previousStateHash,
-        blockCreator: cs.blockCreator,
-        date: bs.date,
-        utcDate: bs.utcDate,
-        snarkedLedgerHash: bs.snarkedLedgerHash,
-        stagedLedgerHash: bs.stagedLedgerHash,
-        userCommands,
-      };
-      if (cs.coinbaseReceiever != null) info.coinbaseReceiver = cs.coinbaseReceiever;
-      if (cs.stakingEpochData) {
-        info.stakingEpochData = { epochLength: Number(cs.stakingEpochData.epochLength) };
-      }
-      return info;
-    });
+  /** The network's genesis block. */
+  async getGenesisBlock(): Promise<BlockInfo> {
+    const data = await this.executeQuery<{ genesisBlock: RawBlock }>(
+      QUERY_GENESIS_BLOCK,
+      undefined,
+      'get_genesis_block',
+    );
+    return parseBlockInfo(data.genesisBlock);
   }
 
   async getPeers(): Promise<PeerInfo[]> {
@@ -377,8 +346,8 @@ export class MinaClient {
   }
 
   async getPooledUserCommands(publicKey?: string): Promise<PooledUserCommand[]> {
-    const query = publicKey ? QUERY_POOLED_USER_COMMANDS : QUERY_POOLED_USER_COMMANDS_ALL;
-    const variables: Variables | undefined = publicKey ? { publicKey } : undefined;
+    // $publicKey is nullable: null returns the commands of every sender.
+    const variables: Variables = { publicKey: publicKey || null };
     const data = await this.executeQuery<{
       pooledUserCommands: Array<{
         id: string;
@@ -394,7 +363,7 @@ export class MinaClient {
         memo: string | null;
         failureReason: string | null;
       }> | null;
-    }>(query, variables, 'get_pooled_user_commands');
+    }>(QUERY_POOLED_USER_COMMANDS, variables, 'get_pooled_user_commands');
 
     return (data.pooledUserCommands ?? []).map((c) => {
       const cmd: PooledUserCommand = {
@@ -413,6 +382,41 @@ export class MinaClient {
       if (c.failureReason !== undefined) cmd.failureReason = c.failureReason;
       return cmd;
     });
+  }
+
+  /** Pending zkApp commands; omit `publicKey` for the commands of every fee payer. */
+  async getPooledZkappCommands(publicKey?: string): Promise<ZkappCommandResult[]> {
+    const data = await this.executeQuery<{ pooledZkappCommands: RawZkappCommand[] | null }>(
+      QUERY_POOLED_ZKAPP_COMMANDS,
+      { publicKey: publicKey || null },
+      'get_pooled_zkapp_commands',
+    );
+    return (data.pooledZkappCommands ?? []).map(parseZkappCommand);
+  }
+
+  /** Completed snark work in the snark pool. */
+  async getSnarkPool(): Promise<CompletedWork[]> {
+    const data = await this.executeQuery<{
+      snarkPool: Array<{ prover: string; fee: string; workIds: Array<number | string> }> | null;
+    }>(QUERY_SNARK_POOL, undefined, 'get_snark_pool');
+    return (data.snarkPool ?? []).map((w) => ({
+      prover: w.prover,
+      fee: Currency.fromGraphQL(w.fee),
+      workIds: w.workIds.map(Number),
+    }));
+  }
+
+  /**
+   * The daemon's fork configuration: the configuration used to seed a
+   * hardfork's genesis ledger, returned as JSON.
+   */
+  async getForkConfig(): Promise<unknown> {
+    const data = await this.executeQuery<{ fork_config: unknown }>(
+      QUERY_FORK_CONFIG,
+      undefined,
+      'get_fork_config',
+    );
+    return data.fork_config;
   }
 
   // -- Mutations --
@@ -451,6 +455,32 @@ export class MinaClient {
     return mapSubmittedCommand(data.sendDelegation.delegation);
   }
 
+  /**
+   * Send a signed zkApp command, as JSON in the daemon's `ZkappCommandInput`
+   * form (for example from o1js `toJSON()`).
+   */
+  async sendZkapp(zkappCommand: unknown): Promise<ZkappCommandResult> {
+    const data = await this.executeQuery<{ sendZkapp: { zkapp: RawZkappCommand } }>(
+      MUTATION_SEND_ZKAPP,
+      { input: { zkappCommand } },
+      'send_zkapp',
+    );
+    return parseZkappCommand(data.sendZkapp.zkapp);
+  }
+
+  /**
+   * Unlock an account in the daemon's keystore, so that the daemon can sign
+   * payments and delegations from it. Returns its public key.
+   */
+  async unlockAccount(publicKey: string, password: string): Promise<string> {
+    const data = await this.executeQuery<{ unlockAccount: { publicKey: string } }>(
+      MUTATION_UNLOCK_ACCOUNT,
+      { input: { publicKey, password } },
+      'unlock_account',
+    );
+    return data.unlockAccount.publicKey;
+  }
+
   /** Pass an empty string or omit `publicKey` to disable the SNARK worker. */
   async setSnarkWorker(publicKey?: string): Promise<string | null> {
     const data = await this.executeQuery<{
@@ -482,89 +512,38 @@ export class MinaClient {
       stateHash: args.stateHash ?? null,
       height: args.height ?? null,
     };
-    const data = await this.executeQuery<{
-      block: {
-        stateHash: string;
-        protocolState: {
-          previousStateHash: string;
-          consensusState: {
-            blockHeight: string | number;
-            epoch: string | number;
-            slot: string | number;
-            slotSinceGenesis: string | number;
-            blockCreator: string;
-            // Mina daemon spells this "coinbaseReceiever" (sic).
-            coinbaseReceiever: string | null;
-          };
-          blockchainState: {
-            date: string;
-            utcDate: string;
-            snarkedLedgerHash: string;
-            stagedLedgerHash: string;
-          };
-        };
-        transactions: {
-          coinbase: string;
-          coinbaseReceiverAccount: { publicKey: string } | null;
-          feeTransfer: Array<{ recipient: string; fee: string; type: string }>;
-          userCommands: Array<{
-            id: string;
-            hash: string;
-            kind: string;
-            nonce: string | number;
-            source: { publicKey: string };
-            receiver: { publicKey: string };
-            amount: string;
-            fee: string;
-            memo: string;
-            failureReason: string | null;
-          }>;
-        };
-      } | null;
-    }>(QUERY_BLOCK, variables, 'get_block');
-
+    const data = await this.executeQuery<{ block: RawBlock | null }>(
+      QUERY_BLOCK,
+      variables,
+      'get_block',
+    );
     if (!data.block) {
       throw new Error(
         `block not found (stateHash=${args.stateHash ?? 'null'}, height=${args.height ?? 'null'})`,
       );
     }
-    const b = data.block;
-    const cs = b.protocolState.consensusState;
-    const bs = b.protocolState.blockchainState;
-    const tx = b.transactions;
-    const userCommands: BlockTransaction[] = tx.userCommands.map((c) => ({
-      id: c.id,
-      hash: c.hash,
-      kind: c.kind,
-      nonce: String(c.nonce),
-      source: c.source.publicKey,
-      receiver: c.receiver.publicKey,
-      amount: c.amount,
-      fee: c.fee,
-      memo: c.memo,
-      failureReason: c.failureReason,
-    }));
-    const feeTransfers: FeeTransfer[] = tx.feeTransfer.map((f) => ({
-      recipient: f.recipient,
-      fee: f.fee,
-      type: f.type,
-    }));
+    const info = parseBlockInfo(data.block);
+    const cs = data.block.protocolState.consensusState;
     const block: Block = {
-      stateHash: b.stateHash,
-      previousStateHash: b.protocolState.previousStateHash,
-      blockHeight: Number(cs.blockHeight),
-      epoch: Number(cs.epoch),
-      slot: Number(cs.slot),
-      slotSinceGenesis: Number(cs.slotSinceGenesis),
-      blockCreator: cs.blockCreator,
-      date: bs.date,
-      utcDate: bs.utcDate,
-      snarkedLedgerHash: bs.snarkedLedgerHash,
-      stagedLedgerHash: bs.stagedLedgerHash,
-      coinbase: tx.coinbase,
-      coinbaseReceiver: tx.coinbaseReceiverAccount?.publicKey ?? null,
-      feeTransfers,
-      userCommands,
+      stateHash: info.stateHash,
+      previousStateHash: info.previousStateHash ?? '',
+      creatorPublicKey: info.creatorPublicKey,
+      commandTransactionCount: info.commandTransactionCount,
+      blockHeight: info.height,
+      epoch: info.epoch ?? 0,
+      slot: info.globalSlotSinceHardFork,
+      slotSinceGenesis: info.globalSlotSinceGenesis,
+      blockCreator: info.blockCreator ?? '',
+      date: info.date ?? '',
+      utcDate: info.utcDate ?? '',
+      snarkedLedgerHash: info.snarkedLedgerHash ?? '',
+      stagedLedgerHash: info.stagedLedgerHash ?? '',
+      coinbase: info.coinbase ?? '0',
+      coinbaseReceiver: info.coinbaseReceiverAccount ?? null,
+      feeTransfers: info.feeTransfers ?? [],
+      userCommands: info.userCommands ?? [],
+      stakingEpochData: info.stakingEpochData ?? { epochLength: 0 },
+      nextEpochData: info.nextEpochData ?? { seed: '', ledgerHash: '' },
     };
     if (cs.coinbaseReceiever != null) block.coinbaseReceiverConsensus = cs.coinbaseReceiever;
     return block;
@@ -642,4 +621,164 @@ function mapSubmittedCommand(p: SubmittedCommandRaw): SubmittedCommand {
   if (p.fee != null) out.fee = p.fee;
   if (p.memo != null) out.memo = p.memo;
   return out;
+}
+
+/** The GraphQL shape of a block, shared by BestChain, GenesisBlock and Block. */
+interface RawBlock {
+  stateHash: string;
+  commandTransactionCount: number;
+  creatorAccount: { publicKey: string | null } | null;
+  protocolState: {
+    previousStateHash: string;
+    consensusState: {
+      blockHeight: string | number;
+      epoch: string | number;
+      slot: string | number;
+      slotSinceGenesis: string | number;
+      blockCreator: string;
+      // The Mina daemon spells this field "coinbaseReceiever" (sic).
+      coinbaseReceiever: string | null;
+      stakingEpochData: {
+        epochLength: string | number;
+        seed: string;
+        ledger: { hash: string };
+      } | null;
+      nextEpochData: { seed: string; ledger: { hash: string } } | null;
+    };
+    blockchainState: {
+      date: string;
+      utcDate: string;
+      snarkedLedgerHash: string;
+      stagedLedgerHash: string;
+    };
+  };
+  transactions: {
+    coinbase: string;
+    coinbaseReceiverAccount: { publicKey: string } | null;
+    feeTransfer: Array<{ recipient: string; fee: string; type: string }> | null;
+    userCommands: Array<{
+      id: string;
+      hash: string;
+      kind: string;
+      nonce: string | number;
+      source: { publicKey: string };
+      receiver: { publicKey: string };
+      amount: string;
+      fee: string;
+      memo: string;
+      failureReason: string | null;
+    }> | null;
+  };
+}
+
+function parseBlockInfo(b: RawBlock): BlockInfo {
+  const cs = b.protocolState.consensusState;
+  const bs = b.protocolState.blockchainState;
+  const tx = b.transactions;
+  const userCommands: BlockTransaction[] = (tx.userCommands ?? []).map((c) => ({
+    id: c.id,
+    hash: c.hash,
+    kind: c.kind,
+    nonce: String(c.nonce),
+    source: c.source.publicKey,
+    receiver: c.receiver.publicKey,
+    amount: c.amount,
+    fee: c.fee,
+    memo: c.memo,
+    failureReason: c.failureReason,
+  }));
+  const feeTransfers: FeeTransfer[] = (tx.feeTransfer ?? []).map((f) => ({
+    recipient: f.recipient,
+    fee: f.fee,
+    type: f.type,
+  }));
+  const info: BlockInfo = {
+    stateHash: b.stateHash,
+    height: Number(cs.blockHeight),
+    globalSlotSinceHardFork: Number(cs.slot),
+    globalSlotSinceGenesis: Number(cs.slotSinceGenesis),
+    creatorPublicKey: b.creatorAccount?.publicKey ?? 'unknown',
+    commandTransactionCount: b.commandTransactionCount,
+    epoch: Number(cs.epoch),
+    previousStateHash: b.protocolState.previousStateHash,
+    blockCreator: cs.blockCreator,
+    date: bs.date,
+    utcDate: bs.utcDate,
+    snarkedLedgerHash: bs.snarkedLedgerHash,
+    stagedLedgerHash: bs.stagedLedgerHash,
+    coinbase: tx.coinbase,
+    coinbaseReceiverAccount: tx.coinbaseReceiverAccount?.publicKey ?? null,
+    feeTransfers,
+    userCommands,
+  };
+  if (cs.coinbaseReceiever != null) info.coinbaseReceiver = cs.coinbaseReceiever;
+  if (cs.stakingEpochData) {
+    info.stakingEpochData = {
+      epochLength: Number(cs.stakingEpochData.epochLength),
+      seed: cs.stakingEpochData.seed,
+      ledgerHash: cs.stakingEpochData.ledger.hash,
+    };
+  }
+  if (cs.nextEpochData) {
+    info.nextEpochData = {
+      seed: cs.nextEpochData.seed,
+      ledgerHash: cs.nextEpochData.ledger.hash,
+    };
+  }
+  return info;
+}
+
+/**
+ * The daemon sends a timing object with every field null for an untimed
+ * account; that is no timing.
+ */
+function parseTiming(
+  t: { [K in keyof AccountTiming]: string | null } | null,
+): AccountTiming | null {
+  if (t == null || Object.values(t).every((v) => v == null)) return null;
+  return {
+    initialMinimumBalance: t.initialMinimumBalance ?? '',
+    cliffTime: t.cliffTime ?? '',
+    cliffAmount: t.cliffAmount ?? '',
+    vestingPeriod: t.vestingPeriod ?? '',
+    vestingIncrement: t.vestingIncrement ?? '',
+  };
+}
+
+/** The GraphQL shape of a zkApp command, in SendZkapp and PooledZkappCommands. */
+interface RawZkappCommand {
+  id: string;
+  hash: string;
+  zkappCommand: {
+    memo: string;
+    feePayer: {
+      body: {
+        publicKey: string;
+        fee: string;
+        nonce: string | number;
+        validUntil: string | number | null;
+      };
+    };
+  };
+  failureReason: Array<{ index: string | number | null; failures: string[] }> | null;
+}
+
+function parseZkappCommand(z: RawZkappCommand): ZkappCommandResult {
+  const body = z.zkappCommand.feePayer.body;
+  return {
+    id: z.id,
+    hash: z.hash,
+    memo: z.zkappCommand.memo,
+    feePayer: {
+      publicKey: body.publicKey,
+      fee: Currency.fromGraphQL(String(body.fee)),
+      nonce: Number(body.nonce),
+      validUntil: body.validUntil == null ? null : Number(body.validUntil),
+    },
+    failureReason:
+      z.failureReason?.map((f) => ({
+        index: f.index == null ? null : Number(f.index),
+        failures: f.failures,
+      })) ?? null,
+  };
 }
