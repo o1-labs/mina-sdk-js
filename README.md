@@ -59,27 +59,47 @@ Constructor options are validated eagerly — invalid values throw `RangeError` 
 
 ## API Reference
 
+The Mina SDKs have the same API, defined in
+[mina-sdk-spec](https://github.com/o1-labs/mina-sdk-spec). `spec/` is a copy
+of it at the tag in `spec/VERSION`. `tests/spec.test.ts` checks that this
+SDK's queries, including the ITN queries, are the specification's documents,
+and CI checks that `spec/` is the tag's copy.
+
 ### Queries
 
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `getSyncStatus()` | `string` | Node sync status (SYNCED, BOOTSTRAP, etc.) |
-| `getDaemonStatus()` | `DaemonStatus` | Comprehensive daemon status |
+| `getDaemonStatus()` | `DaemonStatus` | Daemon status: chain length, peers, addresses, block production keys |
+| `getDaemonMetrics()` | `DaemonMetrics` | Transaction and snark pool metrics, block production delay |
 | `getNetworkId()` | `string` | Network identifier |
-| `getAccount(publicKey, tokenId?)` | `AccountData` | Account balance, nonce, delegate |
+| `getAccount(publicKey, tokenId?)` | `AccountData` | Balance, nonce, delegate, timing, permissions, zkApp state |
 | `getBestChain(maxLength?)` | `BlockInfo[]` | Recent blocks from the best chain |
+| `getGenesisBlock()` | `BlockInfo` | The genesis block |
+| `getBlock({ stateHash } \| { height })` | `Block` | One block, by state hash or height |
 | `getPeers()` | `PeerInfo[]` | Connected peers |
-| `getPooledUserCommands(publicKey?)` | `PooledUserCommand[]` | Pending transactions |
+| `getPooledUserCommands(publicKey?)` | `PooledUserCommand[]` | Pending payments and delegations |
+| `getPooledZkappCommands(publicKey?)` | `ZkappCommandResult[]` | Pending zkApp commands |
+| `getTransactionStatus({ payment } \| { zkappTransaction })` | `TransactionStatus` | `PENDING`, `INCLUDED` or `UNKNOWN` |
+| `getGenesisConstants()` | `GenesisConstants` | Genesis timestamp, coinbase, account creation fee |
+| `getTrackedAccounts()` | `TrackedAccount[]` | Accounts in the daemon's keystore |
+| `getSnarkPool()` | `CompletedWork[]` | Completed snark work |
+| `getForkConfig()` | `unknown` | The daemon's fork configuration (JSON) |
 | `executeQuery(query, variables, name)` | `T` | Run a custom GraphQL query |
 
 ### Mutations
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `sendPayment(params)` | `SendPaymentResult` | Send a payment |
-| `sendDelegation(params)` | `SendDelegationResult` | Delegate stake |
+| `sendPayment(params)` | `SendPaymentResult` | Send a payment; `params.signature` for one made outside the daemon |
+| `sendDelegation(params)` | `SendDelegationResult` | Delegate stake; `params.signature` likewise |
+| `sendZkapp(command)` | `ZkappCommandResult` | Send a signed zkApp command (JSON) |
+| `unlockAccount(publicKey, password)` | `string` | Unlock a keystore account so the daemon can sign with it |
 | `setSnarkWorker(publicKey?)` | `string \| null` | Set/unset SNARK worker |
 | `setSnarkWorkFee(fee)` | `string` | Set SNARK work fee |
+
+Integration tests of the daemon client: set `MINA_GRAPHQL_URI` and run
+`npm run test:integration`.
 
 ### Currency
 
@@ -200,9 +220,8 @@ a caller that keeps the node's peer ID. Errors: `ItnUnauthorizedError` (401),
 `ItnSequencingError` (412 after a new auth), `InvalidItnKeyError`, and
 `DaemonConnectionError` whose `cause` is an `ItnHttpError` with the status.
 
-`schema/itn_graphql_schema.json` is an introspection dump of the ITN schema
-(daemon `4.0.0-6965b50` devnet), and a test checks every ITN document against
-it. The Rust (`mina_sdk::itn`) and Go (`mina-sdk-go/itn`) SDKs have the same
+The ITN documents are those of `spec/itn-operations.graphql`, which
+mina-sdk-spec validates against the daemon's ITN schema. The Rust (`mina_sdk::itn`) and Go (`mina-sdk-go/itn`) SDKs have the same
 client. Integration tests: set `MINA_ITN_URI` and `MINA_ITN_KEY` and run
 `npm run test:integration`.
 
