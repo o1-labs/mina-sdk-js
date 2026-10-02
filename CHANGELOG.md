@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The common API of the Mina SDKs, from
-  [mina-sdk-spec](https://github.com/o1-labs/mina-sdk-spec) v0.1.0: `spec/` is
+  [mina-sdk-spec](https://github.com/o1-labs/mina-sdk-spec) v0.1.2: `spec/` is
   a copy at the tag in `spec/VERSION`. `tests/spec.test.ts` checks that the
   query strings (daemon and ITN) are the specification's documents, and a CI
   job checks that `spec/` is the tag's copy.
