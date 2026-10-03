@@ -111,6 +111,32 @@ export interface GatingUpdate {
 }
 
 /** Per-call options. */
+/** Input of `createAccounts`. */
+export interface CreateAccountsDetails {
+  /** Private key (base58) of the account that funds the new accounts. */
+  feePayer: string;
+  /** Number of new accounts. */
+  numAccounts: number;
+  /** Fee of each zkApp command that creates accounts. */
+  fee: Currency;
+  /** Divided among the new accounts; each pays the account creation fee out of its share. */
+  amount: Currency;
+}
+
+/** A new account of `createAccounts`. */
+export interface CreatedAccount {
+  publicKey: string;
+  /** Private key (base58). */
+  privateKey: string;
+}
+
+/** Result of `createAccounts`. */
+export interface CreatedAccounts {
+  /** Handle of the background job; `scheduledTransactions` lists it until the job ends. */
+  handle: string;
+  accounts: CreatedAccount[];
+}
+
 export interface ItnCallOptions {
   /**
    * Cancels the call, also while it waits for an earlier request of the same

@@ -2,9 +2,10 @@
 // MINA_ITN_URI (e.g. http://127.0.0.1:3086/graphql) and MINA_ITN_KEY (a base64
 // ed25519 seed whose public key is in --itn-keys), and are skipped otherwise.
 // None of them stops the daemon or sends transactions.
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
-import { GraphQLError } from '../../src/index.js';
+import { Currency, GraphQLError } from '../../src/index.js';
 import { ItnClient, ItnKey, ItnUnauthorizedError } from '../../src/itn/index.js';
 
 const uri = process.env.MINA_ITN_URI ?? '';
@@ -64,4 +65,41 @@ describe.skipIf(!uri || !seed)('ITN server', () => {
       trustedPeers: [],
     });
   });
+});
+
+// Operations for harness support (MinaProtocol/mina#19616): only with
+// MINA_ITN_HARNESS=1, because older daemons do not have them. createAccounts
+// sends transactions and also needs MINA_ITN_FEE_PAYER (a funded base58 key).
+const harness = process.env.MINA_ITN_HARNESS === '1';
+const feePayer = process.env.MINA_ITN_FEE_PAYER ?? '';
+
+describe.skipIf(!uri || !seed || !harness)('ITN harness support', () => {
+  it('commitId and scheduledTransactions', async () => {
+    const c = client();
+    expect((await c.commitId()).length).toBeGreaterThanOrEqual(7);
+    expect(Array.isArray(await c.scheduledTransactions())).toBe(true);
+  });
+
+  it.skipIf(!feePayer)(
+    'createAccounts funds the accounts under the handle',
+    async () => {
+      const c = client();
+      const handle = randomUUID();
+      const details = {
+        feePayer,
+        numAccounts: 3,
+        fee: Currency.fromMina('0.1'),
+        amount: Currency.fromMina('6'),
+      };
+      const created = await c.createAccounts(details, handle);
+      expect(created.handle).toBe(handle);
+      expect(created.accounts).toHaveLength(3);
+      expect((await c.createAccounts(details, handle)).accounts[0]).toEqual(created.accounts[0]);
+      for (let i = 0; i < 120 && (await c.scheduledTransactions()).includes(handle); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      expect(await c.scheduledTransactions()).not.toContain(handle);
+    },
+    660_000,
+  );
 });

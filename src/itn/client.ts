@@ -3,6 +3,11 @@ import type { GraphQLErrorEntry } from '../errors.js';
 import { ItnHttpError, ItnSequencingError, ItnUnauthorizedError } from './errors.js';
 import type { ItnKey } from './key.js';
 import {
+  MUTATION_CREATE_ACCOUNTS,
+  MUTATION_SCHEDULE_PAYMENTS_WITH_HANDLE,
+  MUTATION_SCHEDULE_ZKAPP_COMMANDS_WITH_HANDLE,
+  QUERY_COMMIT_ID,
+  QUERY_SCHEDULED_TRANSACTIONS,
   MUTATION_FLUSH_INTERNAL_LOGS,
   MUTATION_SCHEDULE_PAYMENTS,
   MUTATION_SCHEDULE_ZKAPP_COMMANDS,
@@ -15,6 +20,8 @@ import {
   QUERY_SLOTS_WON,
 } from './queries.js';
 import type {
+  CreateAccountsDetails,
+  CreatedAccounts,
   GatingUpdate,
   ItnAuth,
   ItnCallOptions,
@@ -325,16 +332,7 @@ export class ItnClient {
 
   /** Start sending payments; returns the handle for {@link stopScheduledTransactions}. */
   async schedulePayments(details: PaymentsDetails, options?: ItnCallOptions): Promise<string> {
-    const input = {
-      durationMin: details.durationMin,
-      tps: details.tps,
-      memoPrefix: details.memoPrefix,
-      maxFee: details.maxFee.toNanominaString(),
-      minFee: details.minFee.toNanominaString(),
-      amount: details.amount.toNanominaString(),
-      receiver: details.receiver,
-      senders: nonNull(details.senders),
-    };
+    const input = paymentsInput(details);
     const data = await this.executeQuery<{ schedulePayments: string }>(
       MUTATION_SCHEDULE_PAYMENTS,
       { input },
@@ -349,27 +347,7 @@ export class ItnClient {
     details: ZkappCommandsDetails,
     options?: ItnCallOptions,
   ): Promise<string> {
-    const input: Record<string, unknown> = {
-      maxAccountUpdates: details.maxAccountUpdates ?? null,
-      maxCost: details.maxCost,
-      accountQueueSize: details.accountQueueSize,
-      deploymentFee: details.deploymentFee.toNanominaString(),
-      maxFee: details.maxFee.toNanominaString(),
-      minFee: details.minFee.toNanominaString(),
-      initBalance: details.initBalance.toNanominaString(),
-      maxNewZkappBalance: details.maxNewZkappBalance.toNanominaString(),
-      minNewZkappBalance: details.minNewZkappBalance.toNanominaString(),
-      maxBalanceChange: details.maxBalanceChange.toNanominaString(),
-      minBalanceChange: details.minBalanceChange.toNanominaString(),
-      noPrecondition: details.noPrecondition,
-      memoPrefix: details.memoPrefix,
-      durationMin: details.durationMin,
-      tps: details.tps,
-      numNewAccounts: details.numNewAccounts,
-      numZkappsToDeploy: details.numZkappsToDeploy,
-      feePayers: nonNull(details.feePayers),
-    };
-    if (details.nonDefaultToken !== undefined) input.nonDefaultToken = details.nonDefaultToken;
+    const input = zkappInput(details);
     const data = await this.executeQuery<{ scheduleZkappCommands: string }>(
       MUTATION_SCHEDULE_ZKAPP_COMMANDS,
       { input },
@@ -441,6 +419,129 @@ export class ItnClient {
     );
     return data.zkAppCommandLimit;
   }
+
+  // The following methods need a daemon with MinaProtocol/mina#19616; older
+  // daemons answer them with a GraphQL error. A handle is a UUID that the
+  // caller chooses and records before the call. A call with the handle of a
+  // running scheduler starts nothing and returns that handle, so these calls
+  // may be repeated after a transport error.
+
+  /** The git commit of the daemon's build. */
+  async commitId(options?: ItnCallOptions): Promise<string> {
+    const data = await this.executeQuery<{ auth: { commitId: string } }>(
+      QUERY_COMMIT_ID,
+      undefined,
+      'itn_commit_id',
+      options,
+    );
+    return data.auth.commitId;
+  }
+
+  /** Handles of the running payment and zkApp schedulers and account-creation jobs. */
+  async scheduledTransactions(options?: ItnCallOptions): Promise<string[]> {
+    const data = await this.executeQuery<{ scheduledTransactions: string[] }>(
+      QUERY_SCHEDULED_TRANSACTIONS,
+      undefined,
+      'itn_scheduled_transactions',
+      options,
+    );
+    return data.scheduledTransactions;
+  }
+
+  /** Start sending payments under `handle`; returns it. */
+  async schedulePaymentsWithHandle(
+    details: PaymentsDetails,
+    handle: string,
+    options?: ItnCallOptions,
+  ): Promise<string> {
+    const data = await this.executeQuery<{ schedulePayments: string }>(
+      MUTATION_SCHEDULE_PAYMENTS_WITH_HANDLE,
+      { input: paymentsInput(details), handle },
+      'itn_schedule_payments_with_handle',
+      options,
+    );
+    return data.schedulePayments;
+  }
+
+  /** Start sending zkApp commands under `handle`; returns it. */
+  async scheduleZkappCommandsWithHandle(
+    details: ZkappCommandsDetails,
+    handle: string,
+    options?: ItnCallOptions,
+  ): Promise<string> {
+    const data = await this.executeQuery<{ scheduleZkappCommands: string }>(
+      MUTATION_SCHEDULE_ZKAPP_COMMANDS_WITH_HANDLE,
+      { input: zkappInput(details), handle },
+      'itn_schedule_zkapp_commands_with_handle',
+      options,
+    );
+    return data.scheduleZkappCommands;
+  }
+
+  /**
+   * Create `details.numAccounts` accounts and fund them in the background; the
+   * keys are returned at once. Wait until {@link scheduledTransactions} no
+   * longer lists the returned handle. Omit `handle` to let the daemon choose it.
+   */
+  async createAccounts(
+    details: CreateAccountsDetails,
+    handle?: string,
+    options?: ItnCallOptions,
+  ): Promise<CreatedAccounts> {
+    const input = {
+      feePayer: details.feePayer,
+      numAccounts: details.numAccounts,
+      fee: details.fee.toNanominaString(),
+      amount: details.amount.toNanominaString(),
+    };
+    const data = await this.executeQuery<{ createAccounts: CreatedAccounts }>(
+      MUTATION_CREATE_ACCOUNTS,
+      { input, handle: handle ?? null },
+      'itn_create_accounts',
+      options,
+    );
+    return data.createAccounts;
+  }
+}
+
+/** The `PaymentsDetails` input of schedulePayments. */
+function paymentsInput(details: PaymentsDetails): Record<string, unknown> {
+  return {
+    durationMin: details.durationMin,
+    tps: details.tps,
+    memoPrefix: details.memoPrefix,
+    maxFee: details.maxFee.toNanominaString(),
+    minFee: details.minFee.toNanominaString(),
+    amount: details.amount.toNanominaString(),
+    receiver: details.receiver,
+    senders: nonNull(details.senders),
+  };
+}
+
+/** The `ZkappCommandsDetails` input of scheduleZkappCommands. */
+function zkappInput(details: ZkappCommandsDetails): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    maxAccountUpdates: details.maxAccountUpdates ?? null,
+    maxCost: details.maxCost,
+    accountQueueSize: details.accountQueueSize,
+    deploymentFee: details.deploymentFee.toNanominaString(),
+    maxFee: details.maxFee.toNanominaString(),
+    minFee: details.minFee.toNanominaString(),
+    initBalance: details.initBalance.toNanominaString(),
+    maxNewZkappBalance: details.maxNewZkappBalance.toNanominaString(),
+    minNewZkappBalance: details.minNewZkappBalance.toNanominaString(),
+    maxBalanceChange: details.maxBalanceChange.toNanominaString(),
+    minBalanceChange: details.minBalanceChange.toNanominaString(),
+    noPrecondition: details.noPrecondition,
+    memoPrefix: details.memoPrefix,
+    durationMin: details.durationMin,
+    tps: details.tps,
+    numNewAccounts: details.numNewAccounts,
+    numZkappsToDeploy: details.numZkappsToDeploy,
+    feePayers: nonNull(details.feePayers),
+  };
+  if (details.nonDefaultToken !== undefined) input.nonDefaultToken = details.nonDefaultToken;
+  return input;
 }
 
 /** `UInt16` arrives as a string ("8302"); accept a number too. */
