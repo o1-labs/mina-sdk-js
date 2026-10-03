@@ -69,6 +69,39 @@ export const MUTATION_ZKAPP_COMMAND_LIMIT = `mutation ZkappCommandLimit($limit: 
   zkAppCommandLimit(limit: $limit)
 }`;
 
+/** The daemon's git commit. Needs a daemon with MinaProtocol/mina#19616; older daemons answer with a GraphQL error. */
+export const QUERY_COMMIT_ID = `query CommitId {
+  auth {
+    commitId
+  }
+}`;
+
+/** Handles of the running payment and zkApp schedulers and account-creation jobs (mina#19616). */
+export const QUERY_SCHEDULED_TRANSACTIONS = `query ScheduledTransactions {
+  scheduledTransactions
+}`;
+
+/** Start sending payments under a handle the caller chose (mina#19616). */
+export const MUTATION_SCHEDULE_PAYMENTS_WITH_HANDLE = `mutation SchedulePaymentsWithHandle($input: PaymentsDetails!, $handle: String!) {
+  schedulePayments(input: $input, handle: $handle)
+}`;
+
+/** Start sending zkApp commands under a handle the caller chose (mina#19616). */
+export const MUTATION_SCHEDULE_ZKAPP_COMMANDS_WITH_HANDLE = `mutation ScheduleZkappCommandsWithHandle($input: ZkappCommandsDetails!, $handle: String!) {
+  scheduleZkappCommands(input: $input, handle: $handle)
+}`;
+
+/** Create and fund new accounts in the background under a handle (mina#19616). */
+export const MUTATION_CREATE_ACCOUNTS = `mutation CreateAccounts($input: CreateAccountsDetails!, $handle: String) {
+  createAccounts(input: $input, handle: $handle) {
+    handle
+    accounts {
+      publicKey
+      privateKey
+    }
+  }
+}`;
+
 /** Every ITN document, for the conformance test. @internal */
 export const ALL_ITN_DOCUMENTS = [
   QUERY_AUTH,
@@ -81,4 +114,9 @@ export const ALL_ITN_DOCUMENTS = [
   MUTATION_UPDATE_GATING,
   MUTATION_STOP_DAEMON,
   MUTATION_ZKAPP_COMMAND_LIMIT,
+  QUERY_COMMIT_ID,
+  QUERY_SCHEDULED_TRANSACTIONS,
+  MUTATION_SCHEDULE_PAYMENTS_WITH_HANDLE,
+  MUTATION_SCHEDULE_ZKAPP_COMMANDS_WITH_HANDLE,
+  MUTATION_CREATE_ACCOUNTS,
 ];

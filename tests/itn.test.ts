@@ -57,9 +57,10 @@ function fakeDaemon(startSeq: number, respond: (body: string) => Response | Prom
   const fetchImpl = (async (_url: string, init: RequestInit) => {
     const body = Buffer.from(init.body as Uint8Array);
     const auth = (init.headers as Record<string, string>).authorization;
-    const isAuth = body.toString().includes('auth {');
     const seq = verifyRequest(key, body, auth);
-    expect(isAuth).toBe(seq === undefined);
+    // The handshake is the request without sequence information; commitId
+    // also selects auth, but sequenced.
+    const isAuth = seq === undefined;
     seen.push({ body, auth, isAuth, seq });
     if (isAuth) {
       return json({
@@ -277,5 +278,63 @@ describe('ItnKey', () => {
     // Seed 0x00..0x1f; the public key is the RFC 8032 derivation.
     const key = ItnKey.fromSeed(Uint8Array.from({ length: 32 }, (_, i) => i));
     expect(key.publicKeyBase64()).toBe('A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=');
+  });
+});
+
+describe('ITN harness support (MinaProtocol/mina#19616)', () => {
+  it('parses the results and sends the handles', async () => {
+    const { client, seen } = fakeDaemon(0, (body) => {
+      if (body.includes('commitId')) return json({ data: { auth: { commitId: 'abc123' } } });
+      if (body.includes('scheduledTransactions'))
+        return json({ data: { scheduledTransactions: ['h1', 'h2'] } });
+      if (body.includes('createAccounts'))
+        return json({
+          data: {
+            createAccounts: {
+              handle: 'h3',
+              accounts: [{ publicKey: 'B62qa', privateKey: 'EKa' }],
+            },
+          },
+        });
+      return json({ data: { schedulePayments: 'h4' } });
+    });
+    expect(await client.commitId()).toBe('abc123');
+    expect(await client.scheduledTransactions()).toEqual(['h1', 'h2']);
+    const details = {
+      feePayer: 'EKfee',
+      numAccounts: 2,
+      fee: Currency.fromNanomina(100),
+      amount: Currency.fromNanomina(5000),
+    };
+    const created = await client.createAccounts(details);
+    expect(created).toEqual({
+      handle: 'h3',
+      accounts: [{ publicKey: 'B62qa', privateKey: 'EKa' }],
+    });
+    await client.createAccounts(details, 'u1');
+    const payments = {
+      durationMin: 1,
+      tps: 0.5,
+      memoPrefix: 'm',
+      maxFee: Currency.fromNanomina(20),
+      minFee: Currency.fromNanomina(10),
+      amount: Currency.fromNanomina(1),
+      receiver: 'B62qr',
+      senders: [],
+    };
+    expect(await client.schedulePaymentsWithHandle(payments, 'u2')).toBe('h4');
+
+    const vars = seen
+      .filter((s) => !s.isAuth)
+      .map(
+        (s) => (JSON.parse(s.body.toString()) as { variables: Record<string, unknown> }).variables,
+      );
+    expect(vars[2]).toEqual({
+      input: { feePayer: 'EKfee', numAccounts: 2, fee: '100', amount: '5000' },
+      handle: null,
+    });
+    expect(vars[3]?.handle).toBe('u1');
+    expect(vars[4]?.handle).toBe('u2');
+    expect((vars[4]?.input as Record<string, unknown>).maxFee).toBe('20');
   });
 });

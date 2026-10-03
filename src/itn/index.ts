@@ -14,6 +14,9 @@ export {
 } from './errors.js';
 export * from './queries.js';
 export type {
+  CreateAccountsDetails,
+  CreatedAccount,
+  CreatedAccounts,
   GatingUpdate,
   ItnAuth,
   ItnCallOptions,
