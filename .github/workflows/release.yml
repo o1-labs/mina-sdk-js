@@ -65,5 +65,12 @@ jobs:
             exit 1
           fi
 
+      # A pre-release (a tag with a hyphen, such as v0.4.0-rc.1) is published
+      # under the npm dist-tag `next`, so that `latest` stays the last release.
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            npm publish --provenance --access public --tag next
+          else
+            npm publish --provenance --access public
+          fi
