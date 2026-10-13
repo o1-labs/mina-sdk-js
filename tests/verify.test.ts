@@ -4,7 +4,7 @@ import {
   verifyPrecomputedBlock,
   VerificationBackendError,
   type VerifiedBlock,
-} from '../src/index.js';
+} from '../src/verify.js';
 
 // Force the optional wasm backend to be unavailable, so the "backend missing" path is
 // tested deterministically whether or not `mina-verify-wasm` happens to be installed.

@@ -226,3 +226,168 @@ describe('common API', () => {
     expect(requests[1]?.variables.signature).toEqual({ field: '1', scalar: '2' });
   });
 });
+
+describe('spec 0.4.0-rc.2 fields', () => {
+  const accountUpdate = {
+    authorization: { signature: 'sig', proof: null },
+    body: {
+      publicKey: 'B62qzk',
+      tokenId: 'wSHV2S',
+      callDepth: 0,
+      callData: '0',
+      actions: [],
+      events: [['1']],
+      incrementNonce: false,
+      useFullCommitment: true,
+      implicitAccountCreationFee: false,
+      balanceChange: { magnitude: '5', sgn: 'Negative' },
+      mayUseToken: { parentsOwnToken: false, inheritFromParent: false },
+      authorizationKind: { isSigned: true, isProved: false, verificationKeyHash: '0' },
+      update: { appState: ['1', null] },
+      preconditions: {
+        validWhile: null,
+        network: { stakingEpochData: { ledger: {} }, nextEpochData: { ledger: {} } },
+        account: { nonce: { lower: '1', upper: '1' }, state: [] },
+      },
+    },
+  };
+
+  it('getBlock returns the zkApp commands and SNARK jobs of the block', async () => {
+    const block = blockJson();
+    (block as Record<string, unknown>).snarkJobs = [
+      { prover: 'B62qprover', fee: '1000', workIds: ['7', 8] },
+    ];
+    (block.transactions as Record<string, unknown>).zkappCommands = [
+      {
+        id: 'zkid',
+        hash: 'zkhash',
+        failureReason: [{ index: '1', failures: ['Cancelled'] }],
+        zkappCommand: {
+          memo: 'E4Y',
+          feePayer: {
+            authorization: 'sig',
+            body: { publicKey: 'B62qfp', fee: '100', nonce: 3, validUntil: null },
+          },
+          accountUpdates: [accountUpdate],
+        },
+      },
+    ];
+    const { client } = mockDaemon({ block });
+    const info = await client.getBlock({ height: 12 });
+    expect(info.snarkJobs).toEqual([
+      { prover: 'B62qprover', fee: Currency.fromGraphQL('1000'), workIds: [7, 8] },
+    ]);
+    expect(info.zkappCommands).toHaveLength(1);
+    const z = info.zkappCommands![0];
+    expect(z.failureReason).toEqual([{ index: 1, failures: ['Cancelled'] }]);
+    expect(z.zkappCommand.feePayer.body).toEqual({
+      publicKey: 'B62qfp',
+      fee: '100',
+      nonce: '3',
+      validUntil: null,
+    });
+    expect(z.zkappCommand.accountUpdates[0].body.balanceChange).toEqual({
+      magnitude: '5',
+      sgn: 'Negative',
+    });
+  });
+
+  it('getBlock without the new fields leaves them out', async () => {
+    const { client } = mockDaemon({ block: blockJson() });
+    const info = await client.getBlock({ height: 12 });
+    expect(info.zkappCommands).toBeUndefined();
+    expect(info.snarkJobs).toBeUndefined();
+  });
+
+  it('getDaemonStatus returns the consensus time, best tip slot and own peer', async () => {
+    const { client } = mockDaemon({
+      daemonStatus: {
+        syncStatus: 'SYNCED',
+        stateHash: '3NK',
+        commitId: 'abc',
+        peers: [],
+        globalSlotSinceGenesisBestTip: '4200',
+        consensusTimeNow: {
+          epoch: '1',
+          slot: '5',
+          globalSlot: '4201',
+          startTime: '1700000000000',
+          endTime: '1700000020000',
+        },
+        addrsAndPorts: {
+          externalIp: '10.0.0.1',
+          bindIp: '0.0.0.0',
+          clientPort: 8301,
+          libp2pPort: 8302,
+          peer: { host: '10.0.0.1', libp2pPort: 8302, peerId: '12D3KooW' },
+        },
+      },
+    });
+    const status = await client.getDaemonStatus();
+    expect(status.globalSlotSinceGenesisBestTip).toBe(4200);
+    expect(status.consensusTimeNow).toEqual({
+      epoch: 1,
+      slot: 5,
+      globalSlot: 4201,
+      startTime: '1700000000000',
+      endTime: '1700000020000',
+    });
+    expect(status.addrsAndPorts?.peer).toEqual({
+      peerId: '12D3KooW',
+      host: '10.0.0.1',
+      port: 8302,
+    });
+  });
+
+  it('getPooledUserCommands returns validUntil, token and feeToken', async () => {
+    const { client } = mockDaemon({
+      pooledUserCommands: [
+        {
+          id: 'i',
+          hash: 'h',
+          kind: 'PAYMENT',
+          nonce: 1,
+          amount: '1',
+          fee: '1',
+          validUntil: '4294967295',
+          token: 'wSHV2S',
+          feeToken: 'wSHV2S',
+          from: 'a',
+          to: 'b',
+          source: null,
+          receiver: null,
+          memo: null,
+          failureReason: null,
+        },
+      ],
+    });
+    const [cmd] = await client.getPooledUserCommands();
+    expect(cmd.validUntil).toBe('4294967295');
+    expect(cmd.token).toBe('wSHV2S');
+    expect(cmd.feeToken).toBe('wSHV2S');
+  });
+});
+
+describe('validUntil', () => {
+  it('sendPayment and sendDelegation send validUntil in the input', async () => {
+    const { client, requests } = mockDaemon({
+      sendPayment: { payment: { id: 'i', hash: 'h', nonce: 1 } },
+      sendDelegation: { delegation: { id: 'i', hash: 'h', nonce: 1 } },
+    });
+    await client.sendPayment({
+      sender: 'a',
+      receiver: 'b',
+      amount: Currency.fromNanomina(1n),
+      fee: Currency.fromNanomina(1n),
+      validUntil: 4294967295,
+    });
+    await client.sendDelegation({
+      sender: 'a',
+      delegateTo: 'b',
+      fee: Currency.fromNanomina(1n),
+      validUntil: 42,
+    });
+    expect((requests[0].variables.input as Record<string, unknown>).validUntil).toBe('4294967295');
+    expect((requests[1].variables.input as Record<string, unknown>).validUntil).toBe('42');
+  });
+});

@@ -29,11 +29,13 @@ import type {
   AccountData,
   AccountPermissions,
   AccountTiming,
+  AccountUpdate,
   AddrsAndPorts,
   Block,
   BlockArgs,
   BlockInfo,
   BlockTransaction,
+  BlockZkappCommand,
   CompletedWork,
   DaemonMetrics,
   DaemonStatus,
@@ -187,12 +189,21 @@ export class MinaClient {
         catchupStatus: string[] | null;
         blockProductionKeys: string[] | null;
         coinbaseReceiver: string | null;
+        globalSlotSinceGenesisBestTip: string | number | null;
+        consensusTimeNow: {
+          epoch: string | number;
+          slot: string | number;
+          globalSlot: string | number;
+          startTime: string;
+          endTime: string;
+        } | null;
         peers: Array<{ peerId: string; host: string; libp2pPort: number }> | null;
         addrsAndPorts: {
           externalIp: string;
           bindIp: string;
           clientPort: number;
           libp2pPort: number;
+          peer: { host: string; libp2pPort: number; peerId: string } | null;
         } | null;
       };
     }>(QUERY_DAEMON_STATUS, undefined, 'get_daemon_status');
@@ -226,7 +237,24 @@ export class MinaClient {
         clientPort: ds.addrsAndPorts.clientPort,
         libp2pPort: ds.addrsAndPorts.libp2pPort,
       };
+      if (ds.addrsAndPorts.peer != null) {
+        const p = ds.addrsAndPorts.peer;
+        addrs.peer = { peerId: p.peerId, host: p.host, port: p.libp2pPort };
+      }
       status.addrsAndPorts = addrs;
+    }
+    if (ds.globalSlotSinceGenesisBestTip != null) {
+      status.globalSlotSinceGenesisBestTip = Number(ds.globalSlotSinceGenesisBestTip);
+    }
+    if (ds.consensusTimeNow != null) {
+      const n = ds.consensusTimeNow;
+      status.consensusTimeNow = {
+        epoch: Number(n.epoch),
+        slot: Number(n.slot),
+        globalSlot: Number(n.globalSlot),
+        startTime: String(n.startTime),
+        endTime: String(n.endTime),
+      };
     }
     return status;
   }
@@ -356,6 +384,9 @@ export class MinaClient {
         nonce: string | number;
         amount: string;
         fee: string;
+        validUntil: string | number | null;
+        token: string | null;
+        feeToken: string | null;
         from: string;
         to: string;
         source: { publicKey: string } | null;
@@ -380,6 +411,11 @@ export class MinaClient {
       if (c.receiver?.publicKey) cmd.receiver = c.receiver.publicKey;
       if (c.memo != null) cmd.memo = c.memo;
       if (c.failureReason !== undefined) cmd.failureReason = c.failureReason;
+      if (c.validUntil !== undefined) {
+        cmd.validUntil = c.validUntil == null ? null : String(c.validUntil);
+      }
+      if (c.token != null) cmd.token = c.token;
+      if (c.feeToken != null) cmd.feeToken = c.feeToken;
       return cmd;
     });
   }
@@ -430,6 +466,7 @@ export class MinaClient {
     };
     if (params.memo) input.memo = params.memo;
     if (params.nonce !== undefined) input.nonce = String(params.nonce);
+    if (params.validUntil !== undefined) input.validUntil = String(params.validUntil);
 
     // The mutation declares $signature, so callers that want daemon-side
     // signing must pass an explicit null — omitting the variable triggers
@@ -448,6 +485,7 @@ export class MinaClient {
     };
     if (params.memo) input.memo = params.memo;
     if (params.nonce !== undefined) input.nonce = String(params.nonce);
+    if (params.validUntil !== undefined) input.validUntil = String(params.validUntil);
 
     const data = await this.executeQuery<{
       sendDelegation: { delegation: SubmittedCommandRaw };
@@ -546,6 +584,8 @@ export class MinaClient {
       nextEpochData: info.nextEpochData ?? { seed: '', ledgerHash: '' },
     };
     if (cs.coinbaseReceiever != null) block.coinbaseReceiverConsensus = cs.coinbaseReceiever;
+    if (info.zkappCommands !== undefined) block.zkappCommands = info.zkappCommands;
+    if (info.snarkJobs !== undefined) block.snarkJobs = info.snarkJobs;
     return block;
   }
 
@@ -652,10 +692,29 @@ interface RawBlock {
       stagedLedgerHash: string;
     };
   };
+  snarkJobs?: Array<{ prover: string; fee: string; workIds: Array<number | string> }> | null;
   transactions: {
     coinbase: string;
     coinbaseReceiverAccount: { publicKey: string } | null;
     feeTransfer: Array<{ recipient: string; fee: string; type: string }> | null;
+    zkappCommands?: Array<{
+      id: string;
+      hash: string;
+      failureReason: Array<{ index: number | string | null; failures: string[] }> | null;
+      zkappCommand: {
+        memo: string;
+        feePayer: {
+          authorization: string;
+          body: {
+            publicKey: string;
+            fee: string;
+            nonce: string | number;
+            validUntil: string | number | null;
+          };
+        };
+        accountUpdates: AccountUpdate[];
+      };
+    }> | null;
     userCommands: Array<{
       id: string;
       hash: string;
@@ -711,6 +770,46 @@ function parseBlockInfo(b: RawBlock): BlockInfo {
     feeTransfers,
     userCommands,
   };
+  if (tx.zkappCommands != null) {
+    info.zkappCommands = tx.zkappCommands.map(
+      (z): BlockZkappCommand => ({
+        id: z.id,
+        hash: z.hash,
+        failureReason:
+          z.failureReason == null
+            ? null
+            : z.failureReason.map((f) => ({
+                index: f.index == null ? null : Number(f.index),
+                failures: f.failures,
+              })),
+        zkappCommand: {
+          memo: z.zkappCommand.memo,
+          feePayer: {
+            authorization: z.zkappCommand.feePayer.authorization,
+            body: {
+              publicKey: z.zkappCommand.feePayer.body.publicKey,
+              fee: z.zkappCommand.feePayer.body.fee,
+              nonce: String(z.zkappCommand.feePayer.body.nonce),
+              validUntil:
+                z.zkappCommand.feePayer.body.validUntil == null
+                  ? null
+                  : String(z.zkappCommand.feePayer.body.validUntil),
+            },
+          },
+          accountUpdates: z.zkappCommand.accountUpdates,
+        },
+      }),
+    );
+  }
+  if (b.snarkJobs != null) {
+    info.snarkJobs = b.snarkJobs.map(
+      (w): CompletedWork => ({
+        prover: w.prover,
+        fee: Currency.fromGraphQL(w.fee),
+        workIds: w.workIds.map(Number),
+      }),
+    );
+  }
   if (cs.coinbaseReceiever != null) info.coinbaseReceiver = cs.coinbaseReceiever;
   if (cs.stakingEpochData) {
     info.stakingEpochData = {

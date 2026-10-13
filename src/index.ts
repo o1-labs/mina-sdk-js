@@ -8,26 +8,23 @@ export { AccountNotFoundError, DaemonConnectionError, GraphQLError } from './err
 export type { GraphQLErrorEntry } from './errors.js';
 export { MinaClient, DEFAULT_GRAPHQL_URI } from './client.js';
 export type { ClientConfig } from './client.js';
-export {
-  checkBlockClaims,
-  compareToClaims,
-  verifyPrecomputedBlock,
-  VerificationBackendError,
-  VerificationError,
-} from './verify.js';
-export type { HonestyResult, VerifiedBlock, VerifyNetwork, VerifyOptions } from './verify.js';
 export type {
   AccountBalance,
   AccountData,
+  AccountUpdate,
   Block,
   BlockArgs,
   BlockInfo,
   BlockTransaction,
+  BlockZkappCommand,
   CompletedWork,
+  ConsensusTime,
   DaemonMetrics,
   DaemonStatus,
+  EpochDataPrecondition,
   FeeTransfer,
   GenesisConstants,
+  Interval,
   NextEpochData,
   PeerInfo,
   PooledUserCommand,
