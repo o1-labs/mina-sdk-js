@@ -84,6 +84,18 @@ export interface AddrsAndPorts {
   bindIp: string;
   clientPort: number;
   libp2pPort: number;
+  /** The daemon's own libp2p peer, when it has one. */
+  peer?: PeerInfo;
+}
+
+/** A consensus time: an epoch and slot with the slot's wall-clock bounds. */
+export interface ConsensusTime {
+  epoch: number;
+  slot: number;
+  globalSlot: number;
+  /** Milliseconds since the Unix epoch, as a decimal string. */
+  startTime: string;
+  endTime: string;
 }
 
 export interface DaemonStatus {
@@ -110,6 +122,10 @@ export interface DaemonStatus {
   coinbaseReceiver?: string | null;
   /** Network endpoints the daemon is bound to. */
   addrsAndPorts?: AddrsAndPorts;
+  /** Global slot since genesis of the best tip. */
+  globalSlotSinceGenesisBestTip?: number;
+  /** The consensus time of now, on the daemon's clock. */
+  consensusTimeNow?: ConsensusTime;
 }
 
 export interface StakingEpochData {
@@ -159,6 +175,97 @@ export interface BlockInfo {
   feeTransfers?: FeeTransfer[];
   /** User commands included in this block. */
   userCommands?: BlockTransaction[];
+  /** zkApp commands included in this block, with their account updates. */
+  zkappCommands?: BlockZkappCommand[];
+  /** Completed SNARK work included in this block. */
+  snarkJobs?: CompletedWork[];
+}
+
+/** A closed interval of a precondition; the bounds are decimal strings. */
+export interface Interval {
+  lower: string;
+  upper: string;
+}
+
+export interface EpochDataPrecondition {
+  seed?: string | null;
+  startCheckpoint?: string | null;
+  lockCheckpoint?: string | null;
+  epochLength?: Interval | null;
+  ledger: {
+    hash?: string | null;
+    totalCurrency?: Interval | null;
+  };
+}
+
+/** One account update of a zkApp command, as the daemon reports it. */
+export interface AccountUpdate {
+  authorization: {
+    signature?: string | null;
+    proof?: string | null;
+  };
+  body: {
+    publicKey: string;
+    tokenId: string;
+    callDepth: number;
+    callData: string;
+    actions: string[][];
+    events: string[][];
+    incrementNonce: boolean;
+    useFullCommitment: boolean;
+    implicitAccountCreationFee: boolean;
+    balanceChange: { magnitude: string; sgn: string };
+    mayUseToken: { parentsOwnToken: boolean; inheritFromParent: boolean };
+    authorizationKind: { isSigned: boolean; isProved: boolean; verificationKeyHash: string };
+    update: {
+      appState: Array<string | null>;
+      delegate?: string | null;
+      zkappUri?: string | null;
+      votingFor?: string | null;
+      tokenSymbol?: string | null;
+      verificationKey?: { hash: string; data: string } | null;
+      timing?: AccountTiming | null;
+      permissions?: AccountPermissions | null;
+    };
+    preconditions: {
+      validWhile?: Interval | null;
+      network: {
+        snarkedLedgerHash?: string | null;
+        blockchainLength?: Interval | null;
+        minWindowDensity?: Interval | null;
+        totalCurrency?: Interval | null;
+        globalSlotSinceGenesis?: Interval | null;
+        stakingEpochData: EpochDataPrecondition;
+        nextEpochData: EpochDataPrecondition;
+      };
+      account: {
+        balance?: Interval | null;
+        nonce?: Interval | null;
+        receiptChainHash?: string | null;
+        delegate?: string | null;
+        state: Array<string | null>;
+        actionState?: string | null;
+        provedState?: boolean | null;
+        isNew?: boolean | null;
+      };
+    };
+  };
+}
+
+/** A zkApp command included in a block. */
+export interface BlockZkappCommand {
+  id: string;
+  hash: string;
+  /** Why the command failed, per account update; null when it succeeded. */
+  failureReason?: Array<{ index?: number | null; failures: string[] }> | null;
+  zkappCommand: {
+    memo: string;
+    feePayer: {
+      authorization: string;
+      body: { publicKey: string; fee: string; nonce: string; validUntil?: string | null };
+    };
+    accountUpdates: AccountUpdate[];
+  };
 }
 
 export interface PooledUserCommand {
@@ -168,6 +275,12 @@ export interface PooledUserCommand {
   nonce: string;
   amount: string;
   fee: string;
+  /** Last global slot (since genesis) the command is valid in. */
+  validUntil?: string | null;
+  /** Token the command moves. */
+  token?: string;
+  /** Token the fee is paid in. */
+  feeToken?: string;
   from: string;
   to: string;
   /** Sender account reference; same as `from` for token=1 commands. */
@@ -275,6 +388,10 @@ export interface Block {
   coinbaseReceiver: string | null;
   feeTransfers: FeeTransfer[];
   userCommands: BlockTransaction[];
+  /** zkApp commands included in this block, with their account updates. */
+  zkappCommands?: BlockZkappCommand[];
+  /** Completed SNARK work included in this block. */
+  snarkJobs?: CompletedWork[];
   stakingEpochData: StakingEpochData;
   nextEpochData: NextEpochData;
 }
