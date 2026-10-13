@@ -50,7 +50,9 @@ jobs:
       # npm >= 11.5.1. Node 20 ships npm 10.x, which signs provenance via
       # GitHub OIDC but cannot authenticate the publish itself, so the
       # registry rejects the PUT with a 404. Upgrade before publishing.
-      - run: npm install -g npm@latest
+      # npm 11 is the newest major that runs on Node 20; npm@latest (12)
+      # needs Node 22 and fails with EBADENGINE.
+      - run: npm install -g npm@11
       - run: npm --version
 
       - run: npm ci
