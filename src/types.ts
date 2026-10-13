@@ -326,6 +326,11 @@ export interface SendPaymentParams {
   fee: Currency;
   memo?: string;
   nonce?: number;
+  /**
+   * Last global slot (since genesis) the payment is valid in. A payment
+   * signed with one must be sent with the same value.
+   */
+  validUntil?: number;
   signature?: SignatureInput | null;
 }
 
@@ -335,6 +340,8 @@ export interface SendDelegationParams {
   fee: Currency;
   memo?: string;
   nonce?: number;
+  /** Last global slot (since genesis) the delegation is valid in. */
+  validUntil?: number;
   signature?: SignatureInput | null;
 }
 

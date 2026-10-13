@@ -466,6 +466,7 @@ export class MinaClient {
     };
     if (params.memo) input.memo = params.memo;
     if (params.nonce !== undefined) input.nonce = String(params.nonce);
+    if (params.validUntil !== undefined) input.validUntil = String(params.validUntil);
 
     // The mutation declares $signature, so callers that want daemon-side
     // signing must pass an explicit null — omitting the variable triggers
@@ -484,6 +485,7 @@ export class MinaClient {
     };
     if (params.memo) input.memo = params.memo;
     if (params.nonce !== undefined) input.nonce = String(params.nonce);
+    if (params.validUntil !== undefined) input.validUntil = String(params.validUntil);
 
     const data = await this.executeQuery<{
       sendDelegation: { delegation: SubmittedCommandRaw };

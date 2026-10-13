@@ -367,3 +367,27 @@ describe('spec 0.4.0-rc.2 fields', () => {
     expect(cmd.feeToken).toBe('wSHV2S');
   });
 });
+
+describe('validUntil', () => {
+  it('sendPayment and sendDelegation send validUntil in the input', async () => {
+    const { client, requests } = mockDaemon({
+      sendPayment: { payment: { id: 'i', hash: 'h', nonce: 1 } },
+      sendDelegation: { delegation: { id: 'i', hash: 'h', nonce: 1 } },
+    });
+    await client.sendPayment({
+      sender: 'a',
+      receiver: 'b',
+      amount: Currency.fromNanomina(1n),
+      fee: Currency.fromNanomina(1n),
+      validUntil: 4294967295,
+    });
+    await client.sendDelegation({
+      sender: 'a',
+      delegateTo: 'b',
+      fee: Currency.fromNanomina(1n),
+      validUntil: 42,
+    });
+    expect((requests[0].variables.input as Record<string, unknown>).validUntil).toBe('4294967295');
+    expect((requests[1].variables.input as Record<string, unknown>).validUntil).toBe('42');
+  });
+});
