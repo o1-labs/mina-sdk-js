@@ -33,6 +33,11 @@
       "types": "./dist/itn.d.ts",
       "import": "./dist/itn.js",
       "require": "./dist/itn.cjs"
+    },
+    "./verify": {
+      "types": "./dist/verify.d.ts",
+      "import": "./dist/verify.js",
+      "require": "./dist/verify.cjs"
     }
   },
   "files": [

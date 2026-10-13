@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sendPayment` and `sendDelegation` take `validUntil`, so that a command
   signed with one can be sent as signed.
 
+### Changed
+- The block verification (`verifyPrecomputedBlock`, `checkBlockClaims`,
+  `compareToClaims` and their types and errors) moved to the entry point
+  `@o1-labs/mina-sdk/verify`. It loads the proof backend with Node's
+  `module`, `path` and `url` APIs, and a browser bundler (Angular's webpack)
+  refused the main entry point because of them. The main entry point now
+  has no Node-only import, so the client works in browsers.
+
 ## [0.4.0-rc.1] - 2026-10-12
 
 From this release on, the four Mina SDKs and mina-sdk-spec have the same

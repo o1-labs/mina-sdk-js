@@ -134,7 +134,7 @@ npm install mina-verify-wasm
 ```
 
 ```ts
-import { verifyPrecomputedBlock, checkBlockClaims } from '@o1-labs/mina-sdk';
+import { verifyPrecomputedBlock, checkBlockClaims } from '@o1-labs/mina-sdk/verify';
 
 // A "precomputed block" is the JSON a daemon publishes to GCS / the archive. (A daemon's
 // GraphQL `protocolState` is a lossy projection and is NOT sufficient to verify a proof.)
