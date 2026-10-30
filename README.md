@@ -72,6 +72,7 @@ and CI checks that `spec/` is the tag's copy.
 | `getSyncStatus()` | `string` | Node sync status (SYNCED, BOOTSTRAP, etc.) |
 | `getDaemonStatus()` | `DaemonStatus` | Daemon status: chain length, peers, addresses, block production keys |
 | `getDaemonMetrics()` | `DaemonMetrics` | Transaction and snark pool metrics, block production delay |
+| `getBootstrapStatus()` | `BootstrapStatus` | Bootstrap phase, attempts and the progress of each ledger sync (daemon 4.0.4) |
 | `getNetworkId()` | `string` | Network identifier |
 | `getAccount(publicKey, tokenId?)` | `AccountData` | Balance, nonce, delegate, timing, permissions, zkApp state |
 | `getBestChain(maxLength?)` | `BlockInfo[]` | Recent blocks from the best chain |
@@ -80,6 +81,7 @@ and CI checks that `spec/` is the tag's copy.
 | `getPeers()` | `PeerInfo[]` | Connected peers |
 | `getPooledUserCommands(publicKey?)` | `PooledUserCommand[]` | Pending payments and delegations |
 | `getPooledZkappCommands(publicKey?)` | `ZkappCommandResult[]` | Pending zkApp commands |
+| `getTransactionPoolStatus()` | `TransactionPoolStatus` | Pool size, capacity and the minimum fee per weight unit (daemon 4.0.4) |
 | `getTransactionStatus({ payment } \| { zkappTransaction })` | `TransactionStatus` | `PENDING`, `INCLUDED` or `UNKNOWN` |
 | `getGenesisConstants()` | `GenesisConstants` | Genesis timestamp, coinbase, account creation fee |
 | `getTrackedAccounts()` | `TrackedAccount[]` | Accounts in the daemon's keystore |

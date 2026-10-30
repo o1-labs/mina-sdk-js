@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `spec/` is mina-sdk-spec v0.4.0-rc.3, which adds two operations of the
+  mina 4.0.4 daemon. `getBootstrapStatus` (`BootstrapStatus`, `LedgerSync`,
+  `LedgerSyncProgress`, `BootstrapPhase`, `SyncedLedger`): what a daemon
+  that is not yet synced is doing, its bootstrap phase and when it began,
+  the number of attempts and why the last one failed, and the progress of
+  each ledger sync. `getTransactionPoolStatus` (`TransactionPoolStatus`):
+  how full the transaction pool is and the fee per weight unit a new
+  command must beat once it is full; `minimumFeePerWeightUnit` stays a
+  string (a decimal integer or a fraction `n/d`, null when the pool is
+  empty). Both need daemon 4.0.4: an older daemon answers with a
+  `GraphQLError` (`Cannot query field`).
+
 ## [0.4.0-rc.2] - unreleased
 
 ### Added
