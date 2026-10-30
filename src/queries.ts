@@ -66,6 +66,35 @@ export const QUERY_DAEMON_METRICS = `query DaemonMetrics {
   }
 }`;
 
+export const QUERY_BOOTSTRAP_STATUS = `query BootstrapStatus {
+  bootstrapStatus {
+    phase
+    phaseStartedAt
+    bootstrapStartedAt
+    bootstrapAttempts
+    lastAttemptFailure
+    ledgerSyncs {
+      ledger
+      target
+      active
+      progress {
+        targets
+        targetSetAt
+        pendingChildHashes
+        pendingContents
+        synced
+        answersAccepted
+        answersIgnored
+        answersRejected
+        lastAcceptedAnswerAt
+        numAccounts
+        accountsSettled
+        accountsReceived
+      }
+    }
+  }
+}`;
+
 export const QUERY_NETWORK_ID = `query NetworkId {
   networkID
 }`;
@@ -863,6 +892,14 @@ export const QUERY_POOLED_ZKAPP_COMMANDS = `query PooledZkappCommands($publicKey
   }
 }`;
 
+export const QUERY_TRANSACTION_POOL_STATUS = `query TransactionPoolStatus {
+  transactionPoolStatus {
+    size
+    maxSize
+    minimumFeePerWeightUnit
+  }
+}`;
+
 export const QUERY_TRANSACTION_STATUS = `query TransactionStatus($payment: ID, $zkappTransaction: ID) {
   transactionStatus(payment: $payment, zkappTransaction: $zkappTransaction)
 }`;
@@ -989,6 +1026,7 @@ export const ALL_DOCUMENTS = [
   QUERY_SYNC_STATUS,
   QUERY_DAEMON_STATUS,
   QUERY_DAEMON_METRICS,
+  QUERY_BOOTSTRAP_STATUS,
   QUERY_NETWORK_ID,
   QUERY_ACCOUNT,
   QUERY_BEST_CHAIN,
@@ -997,6 +1035,7 @@ export const ALL_DOCUMENTS = [
   QUERY_PEERS,
   QUERY_POOLED_USER_COMMANDS,
   QUERY_POOLED_ZKAPP_COMMANDS,
+  QUERY_TRANSACTION_POOL_STATUS,
   QUERY_TRANSACTION_STATUS,
   QUERY_GENESIS_CONSTANTS,
   QUERY_TRACKED_ACCOUNTS,

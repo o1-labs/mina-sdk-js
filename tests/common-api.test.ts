@@ -368,6 +368,109 @@ describe('spec 0.4.0-rc.2 fields', () => {
   });
 });
 
+describe('spec 0.4.0-rc.3 methods', () => {
+  it('getBootstrapStatus returns the phase, attempts and ledger syncs', async () => {
+    const { client, requests } = mockDaemon({
+      bootstrapStatus: {
+        phase: 'SYNCING_ROOT_LEDGER',
+        phaseStartedAt: '1761800000000',
+        bootstrapStartedAt: '1761799000000',
+        bootstrapAttempts: 2,
+        lastAttemptFailure: 'Peer sent an invalid scan state',
+        ledgerSyncs: [
+          {
+            ledger: 'ROOT_SNARKED',
+            target: 'jxRootSnarked',
+            active: true,
+            progress: {
+              targets: 1,
+              targetSetAt: '1761800000000',
+              pendingChildHashes: 12,
+              pendingContents: 3,
+              synced: false,
+              answersAccepted: 40,
+              answersIgnored: 2,
+              answersRejected: 1,
+              lastAcceptedAnswerAt: '1761800005000',
+              numAccounts: 1500,
+              accountsSettled: 700,
+              accountsReceived: 700,
+            },
+          },
+        ],
+      },
+    });
+    const status = await client.getBootstrapStatus();
+    expect(requests[0]?.query).toMatch(/^query BootstrapStatus /);
+    expect(requests[0]?.variables).toEqual({});
+    expect(status).toEqual({
+      phase: 'SYNCING_ROOT_LEDGER',
+      phaseStartedAt: '1761800000000',
+      bootstrapStartedAt: '1761799000000',
+      bootstrapAttempts: 2,
+      lastAttemptFailure: 'Peer sent an invalid scan state',
+      ledgerSyncs: [
+        {
+          ledger: 'ROOT_SNARKED',
+          target: 'jxRootSnarked',
+          active: true,
+          progress: {
+            targets: 1,
+            targetSetAt: '1761800000000',
+            pendingChildHashes: 12,
+            pendingContents: 3,
+            synced: false,
+            answersAccepted: 40,
+            answersIgnored: 2,
+            answersRejected: 1,
+            lastAcceptedAnswerAt: '1761800005000',
+            numAccounts: 1500,
+            accountsSettled: 700,
+            accountsReceived: 700,
+          },
+        },
+      ],
+    });
+  });
+
+  it('getBootstrapStatus before the first bootstrap has null times and no syncs', async () => {
+    const { client } = mockDaemon({
+      bootstrapStatus: {
+        phase: 'WAITING_FOR_PEERS',
+        phaseStartedAt: '1761800000000',
+        bootstrapStartedAt: null,
+        bootstrapAttempts: 0,
+        lastAttemptFailure: null,
+        ledgerSyncs: [],
+      },
+    });
+    const status = await client.getBootstrapStatus();
+    expect(status.phase).toBe('WAITING_FOR_PEERS');
+    expect(status.bootstrapStartedAt).toBeNull();
+    expect(status.lastAttemptFailure).toBeNull();
+    expect(status.ledgerSyncs).toEqual([]);
+  });
+
+  it('getTransactionPoolStatus keeps the minimum fee a string, null when empty', async () => {
+    const full = mockDaemon({
+      transactionPoolStatus: { size: 3000, maxSize: 3000, minimumFeePerWeightUnit: '1000000/3' },
+    });
+    const status = await full.client.getTransactionPoolStatus();
+    expect(full.requests[0]?.query).toMatch(/^query TransactionPoolStatus /);
+    expect(full.requests[0]?.variables).toEqual({});
+    expect(status).toEqual({ size: 3000, maxSize: 3000, minimumFeePerWeightUnit: '1000000/3' });
+
+    const empty = mockDaemon({
+      transactionPoolStatus: { size: 0, maxSize: 3000, minimumFeePerWeightUnit: null },
+    });
+    expect(await empty.client.getTransactionPoolStatus()).toEqual({
+      size: 0,
+      maxSize: 3000,
+      minimumFeePerWeightUnit: null,
+    });
+  });
+});
+
 describe('validUntil', () => {
   it('sendPayment and sendDelegation send validUntil in the input', async () => {
     const { client, requests } = mockDaemon({

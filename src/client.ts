@@ -11,6 +11,7 @@ import {
   QUERY_ACCOUNT,
   QUERY_BEST_CHAIN,
   QUERY_BLOCK,
+  QUERY_BOOTSTRAP_STATUS,
   QUERY_DAEMON_METRICS,
   QUERY_DAEMON_STATUS,
   QUERY_FORK_CONFIG,
@@ -23,6 +24,7 @@ import {
   QUERY_SNARK_POOL,
   QUERY_SYNC_STATUS,
   QUERY_TRACKED_ACCOUNTS,
+  QUERY_TRANSACTION_POOL_STATUS,
   QUERY_TRANSACTION_STATUS,
 } from './queries.js';
 import type {
@@ -36,11 +38,14 @@ import type {
   BlockInfo,
   BlockTransaction,
   BlockZkappCommand,
+  BootstrapPhase,
+  BootstrapStatus,
   CompletedWork,
   DaemonMetrics,
   DaemonStatus,
   FeeTransfer,
   GenesisConstants,
+  LedgerSync,
   PeerInfo,
   PooledUserCommand,
   SendDelegationParams,
@@ -48,7 +53,9 @@ import type {
   SendPaymentParams,
   SendPaymentResult,
   SubmittedCommand,
+  SyncedLedger,
   TrackedAccount,
+  TransactionPoolStatus,
   TransactionStatus,
   TransactionStatusArgs,
   ZkappCommandResult,
@@ -277,6 +284,73 @@ export class MinaClient {
       snarkPoolDiffBroadcasted: m.snarkPoolDiffBroadcasted,
       pendingSnarkWork: m.pendingSnarkWork,
       snarkPoolSize: m.snarkPoolSize,
+    };
+  }
+
+  /**
+   * What the daemon is doing to reach the network's chain: its bootstrap
+   * phase, the attempts so far and the progress of each ledger sync. Needs
+   * daemon 4.0.4; an older daemon answers with a GraphQL error.
+   */
+  async getBootstrapStatus(): Promise<BootstrapStatus> {
+    const data = await this.executeQuery<{
+      bootstrapStatus: {
+        phase: BootstrapPhase;
+        phaseStartedAt: string;
+        bootstrapStartedAt: string | null;
+        bootstrapAttempts: number;
+        lastAttemptFailure: string | null;
+        ledgerSyncs: Array<{
+          ledger: SyncedLedger;
+          target: string | null;
+          active: boolean;
+          progress: {
+            targets: number;
+            targetSetAt: string | null;
+            pendingChildHashes: number;
+            pendingContents: number;
+            synced: boolean;
+            answersAccepted: number;
+            answersIgnored: number;
+            answersRejected: number;
+            lastAcceptedAnswerAt: string | null;
+            numAccounts: number | null;
+            accountsSettled: number;
+            accountsReceived: number;
+          };
+        }> | null;
+      };
+    }>(QUERY_BOOTSTRAP_STATUS, undefined, 'get_bootstrap_status');
+    const b = data.bootstrapStatus;
+    return {
+      phase: b.phase,
+      phaseStartedAt: String(b.phaseStartedAt),
+      bootstrapStartedAt: b.bootstrapStartedAt == null ? null : String(b.bootstrapStartedAt),
+      bootstrapAttempts: b.bootstrapAttempts,
+      lastAttemptFailure: b.lastAttemptFailure ?? null,
+      ledgerSyncs: (b.ledgerSyncs ?? []).map((s): LedgerSync => {
+        const p = s.progress;
+        return {
+          ledger: s.ledger,
+          target: s.target ?? null,
+          active: s.active,
+          progress: {
+            targets: p.targets,
+            targetSetAt: p.targetSetAt == null ? null : String(p.targetSetAt),
+            pendingChildHashes: p.pendingChildHashes,
+            pendingContents: p.pendingContents,
+            synced: p.synced,
+            answersAccepted: p.answersAccepted,
+            answersIgnored: p.answersIgnored,
+            answersRejected: p.answersRejected,
+            lastAcceptedAnswerAt:
+              p.lastAcceptedAnswerAt == null ? null : String(p.lastAcceptedAnswerAt),
+            numAccounts: p.numAccounts ?? null,
+            accountsSettled: p.accountsSettled,
+            accountsReceived: p.accountsReceived,
+          },
+        };
+      }),
     };
   }
 
@@ -587,6 +661,27 @@ export class MinaClient {
     if (info.zkappCommands !== undefined) block.zkappCommands = info.zkappCommands;
     if (info.snarkJobs !== undefined) block.snarkJobs = info.snarkJobs;
     return block;
+  }
+
+  /**
+   * How full the daemon's transaction pool is, and the fee per weight unit a
+   * new command must beat once the pool is full. Needs daemon 4.0.4; an
+   * older daemon answers with a GraphQL error.
+   */
+  async getTransactionPoolStatus(): Promise<TransactionPoolStatus> {
+    const data = await this.executeQuery<{
+      transactionPoolStatus: {
+        size: number;
+        maxSize: number;
+        minimumFeePerWeightUnit: string | null;
+      };
+    }>(QUERY_TRANSACTION_POOL_STATUS, undefined, 'get_transaction_pool_status');
+    const s = data.transactionPoolStatus;
+    return {
+      size: s.size,
+      maxSize: s.maxSize,
+      minimumFeePerWeightUnit: s.minimumFeePerWeightUnit ?? null,
+    };
   }
 
   /**

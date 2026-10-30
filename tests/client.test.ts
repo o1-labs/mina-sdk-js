@@ -322,4 +322,74 @@ describe('MinaClient', () => {
     ) as unknown as typeof fetch;
     expect(await makeClient(empty).getTrackedAccounts()).toEqual([]);
   });
+
+  it('getTransactionPoolStatus returns the pool occupancy with a null minimum fee', async () => {
+    const fetchImpl = vi.fn(async () =>
+      mockResponse({
+        data: { transactionPoolStatus: { size: 0, maxSize: 3000, minimumFeePerWeightUnit: null } },
+      }),
+    ) as unknown as typeof fetch;
+    const status = await makeClient(fetchImpl).getTransactionPoolStatus();
+    expect(status).toEqual({ size: 0, maxSize: 3000, minimumFeePerWeightUnit: null });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('getBootstrapStatus returns a ledger sync with its progress', async () => {
+    const fetchImpl = vi.fn(async () =>
+      mockResponse({
+        data: {
+          bootstrapStatus: {
+            phase: 'PARTICIPATING',
+            phaseStartedAt: '1761800100000',
+            bootstrapStartedAt: '1761800000000',
+            bootstrapAttempts: 1,
+            lastAttemptFailure: null,
+            ledgerSyncs: [
+              {
+                ledger: 'STAKING_EPOCH',
+                target: 'jxStaking',
+                active: false,
+                progress: {
+                  targets: 1,
+                  targetSetAt: '1761800050000',
+                  pendingChildHashes: 0,
+                  pendingContents: 0,
+                  synced: true,
+                  answersAccepted: 10,
+                  answersIgnored: 0,
+                  answersRejected: 0,
+                  lastAcceptedAnswerAt: '1761800090000',
+                  numAccounts: null,
+                  accountsSettled: 0,
+                  accountsReceived: 0,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    ) as unknown as typeof fetch;
+    const status = await makeClient(fetchImpl).getBootstrapStatus();
+    expect(status.phase).toBe('PARTICIPATING');
+    expect(status.lastAttemptFailure).toBeNull();
+    expect(status.ledgerSyncs).toHaveLength(1);
+    expect(status.ledgerSyncs[0]).toMatchObject({
+      ledger: 'STAKING_EPOCH',
+      target: 'jxStaking',
+      active: false,
+      progress: { synced: true, numAccounts: null, answersAccepted: 10 },
+    });
+  });
+
+  it('getBootstrapStatus on a daemon before 4.0.4 is a GraphQL error', async () => {
+    const fetchImpl = vi.fn(async () =>
+      mockResponse({
+        errors: [{ message: 'Cannot query field "bootstrapStatus" on type "query".' }],
+      }),
+    ) as unknown as typeof fetch;
+    await expect(makeClient(fetchImpl, { retries: 3 }).getBootstrapStatus()).rejects.toBeInstanceOf(
+      GraphQLError,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

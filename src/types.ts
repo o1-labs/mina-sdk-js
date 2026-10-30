@@ -446,6 +446,97 @@ export interface DaemonMetrics {
   snarkPoolSize: number;
 }
 
+/** The step a daemon is in on its way to reaching the network's chain. */
+export type BootstrapPhase =
+  | 'STARTING'
+  | 'WAITING_FOR_GENESIS'
+  | 'WAITING_FOR_PEERS'
+  | 'FETCHING_BEST_TIP'
+  | 'LOADING_FRONTIER'
+  | 'SYNCING_ROOT_LEDGER'
+  | 'DOWNLOADING_SCAN_STATE'
+  | 'BUILDING_STAGED_LEDGER'
+  | 'SYNCING_EPOCH_LEDGERS'
+  | 'PARTICIPATING';
+
+/** A ledger that a daemon syncs from its peers. */
+export type SyncedLedger = 'ROOT_SNARKED' | 'STAKING_EPOCH' | 'NEXT_EPOCH';
+
+/** How far a ledger sync has progressed. Times are the daemon's `Time` scalar, as strings. */
+export interface LedgerSyncProgress {
+  /** How many times the sync has been given a new root to reach. */
+  targets: number;
+  /** When the current target was set; null before the first target. */
+  targetSetAt: string | null;
+  /** How many inner nodes the sync is waiting for the children of. */
+  pendingChildHashes: number;
+  /** How many account subtrees the sync is waiting for the accounts of. */
+  pendingContents: number;
+  /** Whether the ledger has reached the current target. */
+  synced: boolean;
+  /** How many answers from peers have added to the ledger or confirmed part of it. */
+  answersAccepted: number;
+  /** How many answers arrived for queries the sync no longer needed. */
+  answersIgnored: number;
+  /** How many answers were invalid, and their queries asked again. */
+  answersRejected: number;
+  /** When an answer was last accepted; null if none was. */
+  lastAcceptedAnswerAt: string | null;
+  /** How many accounts the current target holds, once a peer has said; null until then. */
+  numAccounts: number | null;
+  /**
+   * How many of the current target's accounts the ledger is known to hold.
+   * A sync whose ledger already matched its target can finish before any
+   * are counted, so read a synced ledger as complete.
+   */
+  accountsSettled: number;
+  /** How many accounts peers have sent, over all targets. */
+  accountsReceived: number;
+}
+
+/** The most recent sync of a ledger from peers. */
+export interface LedgerSync {
+  ledger: SyncedLedger;
+  /** The root the sync is reaching; null before a target is set. */
+  target: string | null;
+  /** Whether the sync is still running. */
+  active: boolean;
+  /** For a sync that has ended, its progress when it ended. */
+  progress: LedgerSyncProgress;
+}
+
+/**
+ * What a daemon is doing to reach the network's chain. Needs daemon 4.0.4.
+ * Times are the daemon's `Time` scalar, as strings.
+ */
+export interface BootstrapStatus {
+  phase: BootstrapPhase;
+  phaseStartedAt: string;
+  /** When the current or most recent bootstrap started; null before the first. */
+  bootstrapStartedAt: string | null;
+  /** How many attempts the current or most recent bootstrap has started. */
+  bootstrapAttempts: number;
+  /** Why that bootstrap's last failed attempt failed; null if none failed. */
+  lastAttemptFailure: string | null;
+  /** The most recent sync of each ledger. */
+  ledgerSyncs: LedgerSync[];
+}
+
+/** Occupancy of the daemon's transaction pool. Needs daemon 4.0.4. */
+export interface TransactionPoolStatus {
+  /** Number of commands currently in the pool. */
+  size: number;
+  /** Number of commands the pool holds before it starts evicting commands. */
+  maxSize: number;
+  /**
+   * The lowest fee per weight unit of any command in the pool, in nanomina,
+   * as a decimal integer or a fraction `n/d`; null when the pool is empty.
+   * Once the pool is full, a new command must pay strictly more. Payments
+   * and stake delegations have weight 1.
+   */
+  minimumFeePerWeightUnit: string | null;
+}
+
 /** The fee payer of a zkApp command. */
 export interface ZkappFeePayer {
   publicKey: string;
